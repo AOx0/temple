@@ -1,0 +1,11 @@
+build stage="1":
+    {{ if stage == "1" {"just pre_stage"} else { "echo 'Precompile'" } }}
+    qil Preview
+    {{ if stage == "1" { "biber test" } else { "echo 'Skipped biber test'" } }}
+    /Library/TeX/texbin/pdflatex -file-line-error -interaction=nonstopmode -synctex=1 -shell-escape test.tex    
+    {{ if stage == "1" { "rm -rf _minted-test .texpadtmp/ bibliography.bib.bbl bibliography.bib.blg" } else { "echo 'Skipping'" } }}
+    {{ if stage == "1" { "rm -rf test.aux test.bbl test.bcf test.blg test.log test.run.xml test.synctex.gz" } else { "echo 'Skipping'"} }}
+    open test.pdf -a Preview
+    
+pre_stage:
+    just build 0
