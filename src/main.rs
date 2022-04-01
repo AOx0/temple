@@ -13,7 +13,6 @@ use fs_extra::dir::CopyOptions;
 use subprocess::Exec;
 
 static TEMPLATE_DIR: Dir = include_dir!("embedded");
-static TARGET: Dir = include_dir!("target");
 
 /// Simple program to greet a person
 #[derive(Parser, Debug)]
@@ -95,7 +94,6 @@ fn main() {
 
     fs::create_dir(&path).unwrap();
     TEMPLATE_DIR.extract(&path).unwrap();
-    TARGET.extract(&path).unwrap();
 
     change_name!(path.join("main.rs"), name);
     change_name!(path.join("Cargo.toml"), name);
@@ -128,6 +126,19 @@ fn main() {
     set_current_dir(&path).unwrap();
 
     Exec::shell("cargo build --release").join().unwrap();
+    
+    let name_exe = format!("{}", 
+        &name
+        .replace("a", "x")
+        .replace("e", "x")
+        .replace("i", "x")
+        .replace("o", "x")
+        .replace("u", "x")
+    );
 
-    fs::copy(&path.join("target").join("release").join(&name), &path.parent().unwrap().join(&name)).unwrap();
+    fs::copy(&path.join("target").join("release").join(&name), PathBuf::from("/Users/alejandro/temple").join(name_exe)).unwrap();
+    
+    set_current_dir(&path.parent().unwrap()).unwrap();
+
+    fs_extra::dir::remove(&path).unwrap();
 }
