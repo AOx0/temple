@@ -54,7 +54,7 @@ And now I can quickly create latex projects with the structure I want with custo
 newtex --name l_algebra --title "Linear algebra"
 ```
 
-And title has been remplaced inside `l_algebra/test.tex`
+And title has been replaced inside `l_algebra/test.tex`
 
 ```latex
 ...

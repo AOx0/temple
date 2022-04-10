@@ -80,11 +80,6 @@ macro_rules! change_string {
     };
 }
 
-const CREATE: bool = true;
-const COMPILE: bool = true;
-const MOVE: bool = true;
-const REMOVE: bool = true;
-
 fn main() {
     let mut args = Args::parse();
     args.path = PathBuf::from(args.path.absolutize().unwrap());
@@ -95,34 +90,13 @@ fn main() {
         exit(1);
     };
 
-    if CREATE
-    /* Create temporary file */
-    {
-        create_dir(&mut args);
-    }
-
+    create_dir(&mut args);
     replace_all_keys(&mut args);
-
     move_to_target_path(&mut args);
-
-    if COMPILE
-    /* Compile replaced template */
-    {
-        Exec::shell("cargo build --release").join().unwrap();
-    }
-
-    if MOVE
-    /* Move compiled binary to temple/ dir */
-    {
-        move_binary_to_target_path(&mut args);
-    }
-
-    if REMOVE
-    /* Remove tmp dir */
-    {
-        set_current_dir(&args.path.parent().unwrap()).unwrap();
-        fs_extra::dir::remove(&args.path).unwrap();
-    }
+    Exec::shell("cargo build --release").join().unwrap();
+    move_binary_to_target_path(&mut args);
+    set_current_dir(&args.path.parent().unwrap()).unwrap();
+    fs_extra::dir::remove(&args.path).unwrap();
 }
 
 fn move_binary_to_target_path(args: &mut Args) {
