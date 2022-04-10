@@ -10,8 +10,9 @@ use std::process::exit;
 
 static TEMPLATE_DIR: Dir = include_dir!("PATH");
 
-/// Simple program to greet a person
+/// DESCRIPTION
 #[derive(Parser, Debug)]
+#[clap(about, long_about = None)]
 struct Args {
     /// Name of the project
     #[clap(long, short, default_value = "DEFAULT")]

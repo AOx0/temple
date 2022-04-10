@@ -13,8 +13,9 @@ use subprocess::Exec;
 
 static TEMPLATE_DIR: Dir = include_dir!("embedded");
 
-/// Simple program to greet a person
+/// Wizard creator of wizards
 #[derive(Parser, Debug)]
+#[clap(about, long_about = None)]
 struct Args {
     ///Path of the template
     #[clap(required = true)]
@@ -24,12 +25,16 @@ struct Args {
     #[clap(required = true)]
     pub name: String,
 
-    ///Name of the default project
+    ///Default name for the projects it creates
     #[clap(required = true)]
     pub default_name: String,
 
+    ///The description for the project wizard executable
+    #[clap(default_value = "")]
+    pub description: String,
+
     ///Where to create the project
-    #[clap(default_value = ".")]
+    #[clap(default_value = ".", hide = true)]
     pub path: PathBuf,
 
     ///Replace strings
@@ -214,4 +219,5 @@ fn replace_all_keys(args: &mut Args) {
 
     change_string!(args.path.join("main.rs"), "REPLACE_DEF", replaces_def);
     change_string!(args.path.join("main.rs"), "REPLACE_RES", replaces_result);
+    change_string!(args.path.join("main.rs"), "DESCRIPTION", args.description);
 }
