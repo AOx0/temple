@@ -13,7 +13,7 @@ Use case: I have a project from `X` framework that has a very specific structure
 ```
 
 `temple` allows to define all replaces that should be done for the files inside the directory.
-For example, my `test.tex` looks something like the following:
+For example, my `my_latex_template/test.tex` looks something like the following:
 
 ```latex
 ...
@@ -46,4 +46,21 @@ OPTIONS:
     -h, --help             Print help information
     -n, --name <NAME>      Name of the project [default: project]
     -t, --title <TITLE>    The title of the document
+```
+
+And now I can quickly create latex projects with the structure I want with customization options.
+
+```
+newtex --name l_algebra --title "Linear algebra"
+```
+
+And title has been remplaced inside `l_algebra/test.tex`
+
+```latex
+...
+\begin{center}
+    {\huge Linear algebra}\\
+    ...
+\end{center}
+...
 ```
