@@ -8,7 +8,6 @@ Use case: I have a project from `X` framework that has a very specific structure
 └── my_latex_template
    ├── bibliography.bib
    ├── justfile
-   ├── test.pdf
    └── test.tex 
 ```
 
