@@ -79,5 +79,14 @@ fn main() {
 
     let files = path.read_dir().unwrap();
 
+    for file in files {
+        let file = file.unwrap();
+        if !file.file_type().unwrap().is_dir() {
+            change_string!(file.path(), "TEMPLE_PROJECT", &args.name);
+        }
+    }
+
+    let files = path.read_dir().unwrap();
+
     REPLACE_RES
 }

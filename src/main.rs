@@ -25,9 +25,9 @@ struct Args {
     #[clap(required = true)]
     pub name: String,
 
-    ///Default name for the projects it creates
-    #[clap(required = true)]
-    pub default_name: String,
+    ///Default name for the projects it creates. Also every TEMPLE_PROJECT replaces to this name
+    #[clap(default_value = "project")]
+    pub project_name: String,
 
     ///The description for the project wizard executable
     #[clap(default_value = "")]
@@ -119,7 +119,7 @@ fn create_dir(args: &mut Args) {
     TEMPLATE_DIR.extract(&args.path).unwrap();
 
     change_string!(args.path.join("main.rs"), "PATH", args.template);
-    change_string!(args.path.join("main.rs"), "DEFAULT", args.default_name);
+    change_string!(args.path.join("main.rs"), "DEFAULT", args.project_name);
     change_string!(args.path.join("main.rs"), "NAME", args.name);
     change_string!(args.path.join("Cargo.toml"), "NAME", args.name);
 }
