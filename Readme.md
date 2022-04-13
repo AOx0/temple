@@ -1,65 +1,59 @@
 # temple
-Wizard creator of wizards.
 
-Use case: I have a project from `X` framework that has a very specific structure for it to work. I want to quickly create new projects based on that project and be able to customize very basic things from it.
+Fast project renderer with easy setup and usage.
 
-```
-.
-└── my_latex_template
-   ├── bibliography.bib
-   ├── justfile
-   └── test.tex 
-```
+</br>
 
-`temple` allows to define all replaces that should be done for the files inside the directory.
-For example, my `my_latex_template/test.tex` looks something like the following:
+</br>
 
-```latex
-...
-\begin{center}
-    {\huge TITLE}\\
-    ...
-\end{center}
-...
-```
+# Why temple?
 
-Use `temple` to create a wizard that handles that automatic creation with user-defined values.
 
-```
-temple my_latex_template newtex project -r "TITLE...The title of the document" "LaTex Wizard"
-```
 
-Hence, `temple` produces a binary named `newtex` that packs the folder `my_latex_template` that, when unpacked, replaces all `TITLE` by a user given string as an argument. The default name of any project created by the `newtex` wizard is `"project"` and its description is `"LaTex Wizard"`.
+### 1. It's fast.
 
-```
-newtex
-LaTex Wizard
+It is fast, *very fast*. As shown in the benchmark results, where each tool rendered the same template 300 times:
 
-USAGE:
-    newtex [OPTIONS] --title <TITLE> [PATH]
+* ≈ 5x times faster (mean) than [`project-init`](https://github.com/legion-labs/project-init)
+    * 7x faster in the worst case
+    * 5x faster in the best case
 
-ARGS:
-    <PATH>    Where to create the project [default: .]
+* ≈ 52x times faster (mean) than [`cookiecutter`](https://github.com/cookiecutter/cookiecutter)
+    * 42x faster in the worst case
+    * 60x faster in the best case
 
-OPTIONS:
-    -h, --help             Print help information
-    -n, --name <NAME>      Name of the project [default: project]
-    -t, --title <TITLE>    The title of the document
-```
+| Command | Mean [ms] | Min [ms] | Max [ms] |
+|:---|---:|---:|---:|
+| `temple new test project` | 5.9 ± 0.7 | 5.0 | 9.4 | 
+| `pi new test project -f` | 28.6 ± 4.2 | 23.6 | 66.5 |
+| `cookiecutter -f ~/temple/test2/ --no-input` | 330.2 ± 14.4 | 299.3 | 389.6 |
 
-And now I can quickly create latex projects with the structure I want with customization options.
+</br>
 
-```
-newtex --name l_algebra --title "Linear algebra"
-```
+### 2. Easy set-up.
 
-And title has been replaced inside `l_algebra/test.tex`
+To create a new template, just drop the folder in `~/.temple` and create a `.temple` file where you can define project-level keys. To define keys, follow the syntax:
 
-```latex
-...
-\begin{center}
-    {\huge Linear algebra}\\
-    ...
-\end{center}
-...
-```
+    key=Value with spaces,
+    another_key=value,
+
+Or with a single line (and how ot should be done when defining keys with arguments):
+
+    key=Value with spaces,another_key=value,
+
+When defining keys in single-line mode, there must not be more spaces than desired ones:
+
+- Wrong: `key=Value with spaces ,  another_key=value,`
+- Good:  `key=Value with spaces,another_key=value,`
+
+The hierarchy of keys is:
+
+1. Command line defined (as argument) `temple new template name key=value,key2=Another value,key3=value`
+2. Project defined `~/.temple/template_folder/.temple`
+3. Global defined `~/.temple_conf`
+
+</br>
+
+### Non UTF-8 freindly
+
+`temple` analyzes every file as a vector of bytes, only substitutions get converted to strings and panic when failed, so you can safely analyze executables and there shouldn't be any byte loses

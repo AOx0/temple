@@ -1,197 +1,246 @@
-use clap::Parser;
-use fs_extra::dir::CopyOptions;
-use include_dir::{include_dir, Dir};
-use inflector::cases::snakecase::is_snake_case;
-use path_absolutize::Absolutize;
-use std::env::set_current_dir;
+use clap::{Parser, Subcommand};
+use fs_extra::dir::create_all;
+use smartstring::alias::String;
+use std::env::current_dir;
 use std::fs;
-use std::fs::OpenOptions;
+use std::fs::{create_dir_all, OpenOptions};
 use std::io::{Read, Write};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::exit;
-use subprocess::Exec;
+use temple_parse::*;
 
-static TEMPLATE_DIR: Dir = include_dir!("embedded");
-
-/// Wizard creator of wizards
-#[derive(Parser, Debug)]
-#[clap(about, long_about = None)]
+#[derive(Parser)]
+#[clap()]
 struct Args {
-    ///Path of the template
-    #[clap(required = true)]
-    pub template: String,
-
-    ///Name of the binary
-    #[clap(required = true)]
-    pub name: String,
-
-    ///Default name for the projects it creates. Also every TEMPLE_PROJECT replaces to this name
-    #[clap(default_value = "project")]
-    pub project_name: String,
-
-    ///The description for the project wizard executable
-    #[clap(default_value = "")]
-    pub description: String,
-
-    ///Where to create the project
-    #[clap(default_value = ".", hide = true)]
-    pub path: PathBuf,
-
-    ///Replace strings
-    #[clap(short, long)]
-    pub replaces: Option<Vec<String>>,
+    #[clap(subcommand)]
+    pub(crate) command: Commands,
 }
 
-fn replace<T>(source: &[T], from: &[T], to: &[T]) -> Vec<T>
-where
-    T: Clone + PartialEq,
-{
-    let mut result = source.to_vec();
-    let from_len = from.len();
-    let to_len = to.len();
+macro_rules! r_keys_str {
+    ($contents: expr, $keys: expr) => {
+        $contents.replace(
+            Indicator::from("{{ ", true).unwrap(),
+            Indicator::from(" }}", false).unwrap(),
+            $keys,
+        )
+    };
+}
 
-    let mut i = 0;
-    while i + from_len <= result.len() {
-        if result[i..].starts_with(from) {
-            result.splice(i..i + from_len, to.iter().cloned());
-            i += to_len;
-        } else {
-            i += 1;
+macro_rules! gen_keys {
+    ($path: expr) => {{
+        let mut file = OpenOptions::new().read(true).open($path).unwrap();
+        let mut file_contents: Vec<u8> = Vec::new();
+        file.read_to_end(&mut file_contents).unwrap();
+        Keys::from_string(std::str::from_utf8(&file_contents).unwrap())
+    }};
+}
+
+#[derive(Subcommand, Debug)]
+enum Commands {
+    New {
+        /// Name of the template
+        name: String,
+
+        /// Name of the project
+        project: String,
+
+        /// Custom defined keys from terminal
+        #[clap(default_value = "")]
+        cli_keys: Vec<String>,
+    },
+    List,
+    Init,
+}
+
+fn render_dirs(dir: &Path, target: PathBuf, keys: &Keys, dip: bool) -> Result<(), String> {
+    if dir.is_dir() {
+        // create_dir(&target.join(r_keys_str!(dir.file_name().unwrap().to_str().unwrap()).as_str())).unwrap();
+        let mut contents = Contents::from(dir.file_name().unwrap().to_str().unwrap());
+        let dir_name = r_keys_str!(contents, keys);
+
+        if let Err(e) = dir_name {
+            return Err(e);
+        }
+
+        let dir_name = Contents::get_str_from_result(&dir_name.unwrap().1);
+
+        /* println!(
+            "Creating dir {} in {}",
+            dir.display(),
+            target.display()
+        ); */
+
+        create_dir_all(if !dip { target.parent().unwrap().join(dir_name.as_str()) } else { target.clone() }).unwrap();
+
+        for entry in fs::read_dir(dir).unwrap() {
+            let entry = entry.unwrap();
+            let path = entry.path();
+
+            if path.is_dir() {
+                let mut contents = Contents::from(path.file_name().unwrap().to_str().unwrap());
+                let replacement = r_keys_str!(contents, keys);
+
+                if let Err(e) = replacement {
+                    return Err(e);
+                }
+
+                let replacement = Contents::get_str_from_result(&replacement.unwrap().1);
+
+                render_dirs(&path, target.join(replacement.as_str()), keys, false)?;
+            } else {
+                let mut contents = Contents::from(path.file_name().unwrap().to_str().unwrap());
+                let replacement = r_keys_str!(contents, keys);
+
+                if let Err(e) = replacement {
+                    return Err(e);
+                }
+
+                let replacement = Contents::get_str_from_result(&replacement.unwrap().1);
+
+                let new = OpenOptions::new()
+                    .write(true)
+                    .truncate(true)
+                    .create(true)
+                    .open(target.join(replacement.as_str()))
+                    .unwrap();
+
+                let mut contents =
+                    Contents::from_file(path.parent().unwrap().join(path.file_name().unwrap()))
+                        .unwrap();
+                
+                let replacement = contents
+                .replace(
+                    Indicator::from("{{ ", true).unwrap(),
+                    Indicator::from(" }}", false).unwrap(),
+                    keys,
+                );
+
+                let result = match replacement {
+                    Ok(o) => {o},
+                    Err(e) => return Err(e),
+                };
+
+                Contents::write_to_target(&result.1, new);
+
+                /* println!(
+                    "Rendering {} in {}",
+                    path.parent()
+                        .unwrap()
+                        .join(path.file_name().unwrap())
+                        .display(),
+                    target
+                        .join(
+                            r_keys_str!(path.file_name().unwrap().to_str().unwrap(), keys).as_str()
+                        )
+                        .display()
+                ) */
+            }
         }
     }
-
-    result
-}
-
-macro_rules! change_string {
-    ($f: expr, $from: expr,  $to: expr) => {
-        let mut file = fs::File::open(&$f).unwrap();
-        let mut contents = vec![];
-        file.read_to_end(&mut contents).unwrap();
-
-        let new_contents = replace::<u8>(&contents[..], $from.as_bytes(), $to.as_bytes());
-
-        let mut file = OpenOptions::new()
-            .write(true)
-            .truncate(true)
-            .open(&$f)
-            .unwrap();
-        file.write_all(new_contents.as_ref()).unwrap();
-    };
+    Ok(())
 }
 
 fn main() {
-    let mut args = Args::parse();
-    args.path = PathBuf::from(args.path.absolutize().unwrap());
-    args.path = args.path.join(&format!("{}.tmp", args.name));
+    let args = Args::parse();
 
-    if !is_snake_case(&args.name) {
-        eprintln!("Error: Name must follow snake case. Example: new_project");
+    let home = directories::UserDirs::new()
+        .unwrap()
+        .home_dir()
+        .join(".temple");
+    let config = directories::UserDirs::new()
+        .unwrap()
+        .home_dir()
+        .join(".temple_conf");
+
+    if (!home.exists() || !config.exists()) && !matches!(args.command, Commands::Init) {
+        eprintln!(
+            "Error: No \"~/.temple\" or \".temple_conf\".\n    Run `temple init` to create them"
+        );
         exit(1);
-    };
-
-    create_dir(&mut args);
-    replace_all_keys(&mut args);
-    move_to_target_path(&mut args);
-    Exec::shell("cargo build --release").join().unwrap();
-    move_binary_to_target_path(&mut args);
-    set_current_dir(&args.path.parent().unwrap()).unwrap();
-    fs_extra::dir::remove(&args.path).unwrap();
-}
-
-fn move_binary_to_target_path(args: &mut Args) {
-    fs::copy(
-        &args.path.join("target").join("release").join(&args.name),
-        PathBuf::from("/Users/alejandro/temple").join(&args.name),
-    )
-    .unwrap();
-}
-
-fn move_to_target_path(args: &mut Args) {
-    let options = CopyOptions::new();
-    fs_extra::dir::copy(&args.template, &args.path, &options).unwrap();
-
-    set_current_dir(&args.path).unwrap();
-}
-
-fn create_dir(args: &mut Args) {
-    fs::create_dir(&args.path).unwrap();
-    TEMPLATE_DIR.extract(&args.path).unwrap();
-
-    change_string!(args.path.join("main.rs"), "PATH", args.template);
-    change_string!(args.path.join("main.rs"), "DEFAULT", args.project_name);
-    change_string!(args.path.join("main.rs"), "NAME", args.name);
-    change_string!(args.path.join("Cargo.toml"), "NAME", args.name);
-}
-
-struct Replacements {
-    pub member: String,
-    pub key: String,
-    pub help: String,
-}
-
-impl Replacements {
-    fn new_from(pattern: &str) -> Replacements {
-        let map: Vec<&str> = pattern.split("...").collect();
-        Replacements {
-            member: map[0].to_string().to_lowercase(),
-            key: map[0].to_string(),
-            help: map[1].to_string(),
-        }
-    }
-}
-
-fn get_replacements(args: &mut Args) -> Vec<Replacements> {
-    let mut result = Vec::new();
-    for r in args.replaces.clone().unwrap() {
-        result.push(Replacements::new_from(&r));
     }
 
-    result
-}
+    match args.command {
+        Commands::New {
+            name,
+            project,
+            cli_keys,
+        } => {
+            let template = home.join(name.as_str());
 
-fn replace_all_keys(args: &mut Args) {
-    let mut replaces_result = String::with_capacity(1000);
-    let mut replaces_def = String::with_capacity(1000);
+            if template.is_dir() && template.join(".temple").exists() {
+                let keys_project_config = gen_keys!(template.join(".temple"));
+                let keys_project_user = Keys::from_string(cli_keys.join(" ").as_str());
+                let mut project_keys = Keys::from_string(format!("project={}", &project).as_str());
 
-    replaces_def.push_str("REPLACE_DEF");
+                project_keys.add(keys_project_user);
+                project_keys.add(keys_project_config);
+                project_keys.add(gen_keys!(config));
 
-    replaces_result.push_str(
-        "
-    for file in files {
-        let file = file.unwrap();
-        if !file.file_type().unwrap().is_dir() {
-            REPLACE_RES
+                // println!("{:?}", project_keys.list);
+
+                let mut contents = Contents::from("{{ project }}");
+                let dir_name = r_keys_str!(contents, &project_keys);
+
+                if let Err(e) = dir_name {
+                    println!("Error: {}", e);
+                    exit(1);
+                }
+
+                let dir_name = Contents::get_str_from_result(&dir_name.unwrap().1);
+                // let target = current_dir().unwrap().join(dir_name.as_str());
+
+                // println!("{}", target.display());
+
+                if let Err(e) = render_dirs(
+                    &template,
+                    current_dir().unwrap().join(dir_name.as_str()),
+                    &project_keys,
+                    true,
+                ) {
+                    println!("Error: {}", e);
+                    fs_extra::dir::remove(current_dir().unwrap().join(dir_name.as_str())).unwrap();
+                    exit(1);
+                }
+            } else {
+                println!("Error: Template does not exist");
+            }
         }
-    }",
-    );
+        Commands::List => {
+            let contents = home.read_dir().unwrap();
+            let mut available: Vec<String> = vec![];
 
-    if args.replaces.is_some() {
-        let replacements: Vec<Replacements> = get_replacements(args);
+            for c in contents {
+                let c = c.unwrap();
 
-        for replace in replacements {
-            replaces_def = replaces_def.replace(
-            "REPLACE_DEF",
-            &format!(
-                    "    /// {}\n    #[clap(short, long, required = true)]\n    pub {}: String,\nREPLACE_DEF",
-                    replace.help, replace.member
-                )
-            );
+                if c.file_type().unwrap().is_dir() && c.path().join(".temple").exists() {
+                    available.push(c.file_name().as_os_str().to_str().unwrap().into())
+                }
+            }
 
-            replaces_result = replaces_result.replace(
-                "REPLACE_RES",
-                &format!(
-                    "change_string!(file.path(), \"{}\", args.{}); REPLACE_RES",
-                    replace.key, replace.member
-                ),
-            );
+            if available.is_empty() {
+                println!("No available templates. To add templates add them in ~/.temple.")
+            } else {
+                println!("Available templates: ");
+                available.iter().for_each(|a| println!("   * {}", a));
+            }
+        }
+        Commands::Init => {
+            create_all(&home, true).unwrap();
+            let mut conf = OpenOptions::new()
+                .create(true)
+                .truncate(true)
+                .write(true)
+                .open(config)
+                .unwrap();
+
+            let default_config = "\
+            name=Your name;\n\
+            github=your_github_user;\n"
+                .as_bytes();
+
+            conf.write_all(default_config).unwrap();
+
+            println!("Created ~/.temple_conf file and ~/.temple dir");
         }
     }
-
-    replaces_def = replaces_def.replace("REPLACE_DEF", "");
-    replaces_result = replaces_result.replace("REPLACE_RES", "");
-
-    change_string!(args.path.join("main.rs"), "REPLACE_DEF", replaces_def);
-    change_string!(args.path.join("main.rs"), "REPLACE_RES", replaces_result);
-    change_string!(args.path.join("main.rs"), "DESCRIPTION", args.description);
 }

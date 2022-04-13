@@ -1,15 +1,20 @@
 [package]
 name = "temple"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
+[[bin]]
+name = "temple"
+path = "src/main.rs"
+
+[lib]
+name = "temple_parse"
+path = "temple_parse/src/lib.rs"
+
 [dependencies]
-include_dir = "0.7.2"
-subprocess = "0.2.8"
 fs_extra = "1.2.0"
-heck = "0.4.0"
-path-absolutize = "3.0.12"
-Inflector = "0.11.4"
-clap = { version = "3.1.6", default_features = false, features = ["derive", "std"] }
+directories = "4.0.1"
+smartstring = "1.0.1"
+clap = { version = "3.1.8", default_features = false, features = ["derive", "std"] }
