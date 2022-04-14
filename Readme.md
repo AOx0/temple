@@ -45,10 +45,25 @@ Or with a single line (and how ot should be done when defining keys with argumen
 
     key=Value with spaces,another_key=value,
 
-When defining keys in single-line mode, there must not be more spaces than desired ones:
+When defining keys there must not be more spaces than desired ones (key detection is primitive):
 
 - Wrong: `key=Value with spaces ,  another_key=value,`
 - Good:  `key=Value with spaces,another_key=value,`
+
+- Wrong: 
+
+```
+key=Value with spaces , 
+another_key=value
+```
+    
+- Good:  
+    
+```
+key=Value with spaces,
+another_key=value
+```
+
 
 The hierarchy of keys is:
 
