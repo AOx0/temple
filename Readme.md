@@ -1,12 +1,16 @@
 # temple
 
-Fast project renderer with easy setup and usage.
+Fast experimental project template renderer with easy setup and usage.
 
 </br>
 
+## Installation
+
+    cargo install --git https://github.com/AOx0/temple
+
 </br>
 
-# Why temple?
+## Why temple?
 
 
 
@@ -54,6 +58,6 @@ The hierarchy of keys is:
 
 </br>
 
-### Non UTF-8 freindly
+### Non UTF-8 friendly
 
 `temple` analyzes every file as a vector of bytes, only substitutions get converted to strings and panic when failed, so you can safely analyze executables and there shouldn't be any byte loses
