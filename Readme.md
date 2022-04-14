@@ -41,7 +41,7 @@ To create a new template, just drop the folder in `~/.temple` and create a `.tem
     key=Value with spaces,
     another_key=value,
 
-Or with a single line (and how ot should be done when defining keys with arguments):
+Or with a single line (and how it should be done when defining keys with arguments):
 
     key=Value with spaces,another_key=value,
 
