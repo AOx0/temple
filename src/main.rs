@@ -88,6 +88,11 @@ fn render_dirs(dir: &Path, target: PathBuf, keys: &Keys, dip: bool) -> Result<()
 
                 render_dirs(&path, target.join(replacement.as_str()), keys, false)?;
             } else {
+
+                if dip && path.file_name().unwrap().to_str().unwrap() == ".temple" {
+                    continue;
+                }
+
                 let mut contents = Contents::from(path.file_name().unwrap().to_str().unwrap());
                 let replacement = r_keys_str!(contents, keys);
 

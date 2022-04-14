@@ -146,6 +146,7 @@ impl<'a> Contents {
 
 impl Parse for Contents {
     fn find_indicator(slice: &[u8], from: usize, indicator: Indicator) -> Option<usize> {
+        if slice.is_empty() || slice.len() < 6 { return None };
         for i in from..slice.len() - if indicator.3 { 3 } else { 0 } {
             let byte = slice[i];
             if byte == indicator.0 && slice[i + 1] == indicator.1 && slice[i + 2] == indicator.2 {
