@@ -1,9 +1,5 @@
-use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
-use std::borrow::Borrow;
-use std::fs::{File, OpenOptions};
-use std::path::PathBuf;
-use temple_parse::{Contents, Indicator, Keys, Parse};
-
+use criterion::{black_box, criterion_group, criterion_main, Criterion};
+use tem_p::{Contents, Indicator, Keys, Parse};
 
 pub fn replace_and_write(c: &mut Criterion) {
     c.bench_function("String conversion to keys and write of single file", |b| {
@@ -28,8 +24,5 @@ pub fn replace_and_write(c: &mut Criterion) {
     });
 }
 
-criterion_group!(
-    benches,
-    replace_and_write
-);
+criterion_group!(benches, replace_and_write);
 criterion_main!(benches);

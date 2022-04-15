@@ -7,7 +7,7 @@ use std::fs::{create_dir_all, OpenOptions};
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 use std::process::exit;
-use temple_parse::*;
+use tem_p::*;
 
 #[derive(Parser)]
 #[clap()]
@@ -70,7 +70,12 @@ fn render_dirs(dir: &Path, target: PathBuf, keys: &Keys, dip: bool) -> Result<()
             target.display()
         ); */
 
-        create_dir_all(if !dip { target.parent().unwrap().join(dir_name.as_str()) } else { target.clone() }).unwrap();
+        create_dir_all(if !dip {
+            target.parent().unwrap().join(dir_name.as_str())
+        } else {
+            target.clone()
+        })
+        .unwrap();
 
         for entry in fs::read_dir(dir).unwrap() {
             let entry = entry.unwrap();
@@ -88,7 +93,6 @@ fn render_dirs(dir: &Path, target: PathBuf, keys: &Keys, dip: bool) -> Result<()
 
                 render_dirs(&path, target.join(replacement.as_str()), keys, false)?;
             } else {
-
                 if dip && path.file_name().unwrap().to_str().unwrap() == ".temple" {
                     continue;
                 }
@@ -112,16 +116,15 @@ fn render_dirs(dir: &Path, target: PathBuf, keys: &Keys, dip: bool) -> Result<()
                 let mut contents =
                     Contents::from_file(path.parent().unwrap().join(path.file_name().unwrap()))
                         .unwrap();
-                
-                let replacement = contents
-                .replace(
+
+                let replacement = contents.replace(
                     Indicator::from("{{ ", true).unwrap(),
                     Indicator::from(" }}", false).unwrap(),
                     keys,
                 );
 
                 let result = match replacement {
-                    Ok(o) => {o},
+                    Ok(o) => o,
                     Err(e) => return Err(e),
                 };
 
