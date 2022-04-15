@@ -10,8 +10,13 @@ smartstring = "1.0.1"
 path-absolutize = "3.0.13"
 
 [dev-dependencies]
+iai = "0.1.1"
 criterion = "0.3.5"
 
 [[bench]]
-name = "my_benchmark"
+name = "criterion"
+harness = false
+
+[[bench]]
+name = "iai"
 harness = false
