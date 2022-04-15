@@ -12,27 +12,6 @@ pub struct Keys {
 }
 
 impl Keys {
-    pub fn from_string(string: &str) -> Keys {
-        let mut keys = Keys { list: vec![] };
-        let no_space = string.replace('\n', "");
-        let empty_string = String::from_str("").unwrap();
-        for statement in no_space.split(',') {
-            let statement: Vec<&str> = statement.split('=').collect();
-            let to_push: (String, String) = (
-                statement.get(0).unwrap_or(&"").deref().into(),
-                statement.get(1).unwrap_or(&"").deref().into(),
-            );
-
-            if to_push.0 == empty_string || to_push.1 == empty_string {
-                continue;
-            } else {
-                keys.list.push(to_push);
-            }
-        }
-
-        keys
-    }
-
     pub fn add(&mut self, mut other: Keys) {
         self.list.append(&mut other.list);
     }
@@ -53,6 +32,29 @@ impl Keys {
             file.display()
         )
         .into())
+    }
+}
+
+impl From<&str> for Keys {
+    fn from(string: &str) -> Keys {
+        let mut keys = Keys { list: vec![] };
+        let no_space = string.replace('\n', "");
+        let empty_string = String::from_str("").unwrap();
+        for statement in no_space.split(',') {
+            let statement: Vec<&str> = statement.split('=').collect();
+            let to_push: (String, String) = (
+                statement.get(0).unwrap_or(&"").deref().into(),
+                statement.get(1).unwrap_or(&"").deref().into(),
+            );
+
+            if to_push.0 == empty_string || to_push.1 == empty_string {
+                continue;
+            } else {
+                keys.list.push(to_push);
+            }
+        }
+
+        keys
     }
 }
 
@@ -146,7 +148,9 @@ impl<'a> Contents {
 
 impl Parse for Contents {
     fn find_indicator(slice: &[u8], from: usize, indicator: Indicator) -> Option<usize> {
-        if slice.is_empty() || slice.len() < 6 { return None };
+        if slice.is_empty() || slice.len() < 6 {
+            return None;
+        };
         for i in from..slice.len() - if indicator.3 { 3 } else { 0 } {
             let byte = slice[i];
             if byte == indicator.0 && slice[i + 1] == indicator.1 && slice[i + 2] == indicator.2 {
@@ -188,12 +192,10 @@ impl Parse for Contents {
 
                         some_start += 3;
 
-                        if word
-                            .set(&self.contents.as_slice()[some_start..some_end])
-                            .is_err()
-                        {
-                            return Err("Invalid chars or data".into());
-                        };
+                        word.set(
+                            &self.contents.as_slice()[some_start..some_end],
+                            some_end - some_start,
+                        );
 
                         let replacement = keys.get_match(
                             std::str::from_utf8(&word.contents[0..word.size]).unwrap(),
@@ -250,32 +252,11 @@ impl Word {
         std::str::from_utf8(&self.contents[0..self.size]).unwrap()
     }
 
-    fn set(&mut self, slice: &[u8]) -> Result<(), i32> {
-        let mut i: usize = 0;
-
-        for &byte in slice {
-            if byte.is_ascii_whitespace() {
-                continue;
-            }
-
-            /*if !byte.is_ascii_alphabetic() {
-                eprintln!(
-                    "Error: found non alphabetic nor whitespace char: '{}'. File: {}",
-                    std::str::from_utf8(&[byte]).unwrap_or("Err"),
-                    file.absolutize()
-                        .unwrap_or_else(|_| std::borrow::Cow::from(PathBuf::from(
-                            "Error while getting path"
-                        )))
-                        .display()
-                );
-                return Err(65);
-            }*/
-
+    fn set(&mut self, slice: &[u8], size: usize) {
+        for (i, &byte) in slice.iter().enumerate() {
             self.contents[i] = byte;
-            i += 1;
         }
 
-        self.size = i;
-        Ok(())
+        self.size = size;
     }
 }

@@ -5,7 +5,7 @@ fn test1() {
     let mut contents = Contents::from(black_box("lmao {{ jaja }}"));
     let start = black_box(Indicator::from("{{ ", true)).unwrap();
     let end = black_box(Indicator::from(" }}", false)).unwrap();
-    let keys = Keys::from_string("jaja=perro,");
+    let keys = Keys::from("jaja=perro,");
     let replace = contents.replace(start, end, &keys);
 
     let r = if let Ok(res) = replace {

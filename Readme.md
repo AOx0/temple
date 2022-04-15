@@ -26,10 +26,10 @@ It is fast, *very fast*. As shown in the benchmark results, where each tool rend
     * 42x faster in the worst case
     * 60x faster in the best case
 
-| Command | Mean [ms] | Min [ms] | Max [ms] |
-|:---|---:|---:|---:|
-| `temple new test project` | 5.9 ± 0.7 | 5.0 | 9.4 | 
-| `pi new test project -f` | 28.6 ± 4.2 | 23.6 | 66.5 |
+| Command                                      | Mean [ms] | Min [ms] | Max [ms] |
+|:---------------------------------------------|---:|---:|---:|
+| `tem new test project`                       | 5.9 ± 0.7 | 5.0 | 9.4 | 
+| `pi new test project -f`                     | 28.6 ± 4.2 | 23.6 | 66.5 |
 | `cookiecutter -f ~/temple/test2/ --no-input` | 330.2 ± 14.4 | 299.3 | 389.6 |
 
 </br>

@@ -31,7 +31,7 @@ macro_rules! gen_keys {
         let mut file = OpenOptions::new().read(true).open($path).unwrap();
         let mut file_contents: Vec<u8> = Vec::new();
         file.read_to_end(&mut file_contents).unwrap();
-        Keys::from_string(std::str::from_utf8(&file_contents).unwrap())
+        Keys::from(std::str::from_utf8(&file_contents).unwrap())
     }};
 }
 
@@ -177,8 +177,8 @@ fn main() {
 
             if template.is_dir() && template.join(".temple").exists() {
                 let keys_project_config = gen_keys!(template.join(".temple"));
-                let keys_project_user = Keys::from_string(cli_keys.join(" ").as_str());
-                let mut project_keys = Keys::from_string(format!("project={}", &project).as_str());
+                let keys_project_user = Keys::from(cli_keys.join(" ").as_str());
+                let mut project_keys = Keys::from(format!("project={}", &project).as_str());
 
                 project_keys.add(keys_project_user);
                 project_keys.add(keys_project_config);
