@@ -7,6 +7,8 @@ use std::fs::{create_dir_all, OpenOptions};
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 use std::process::exit;
+use std::sync::Arc;
+use std::thread::spawn;
 use tem_p::*;
 
 #[derive(Parser)]
@@ -52,11 +54,18 @@ enum Commands {
     Init,
 }
 
-fn render_dirs(dir: &Path, target: PathBuf, keys: &Keys, dip: bool) -> Result<(), String> {
+fn render_dirs(
+    dir: &Path,
+    target: &Arc<PathBuf>,
+    keys: &Arc<Keys>,
+    dip: bool,
+) -> Result<(), String> {
     if dir.is_dir() {
         // create_dir(&target.join(r_keys_str!(dir.file_name().unwrap().to_str().unwrap()).as_str())).unwrap();
+        let keys = keys.clone();
+        let target = target.clone();
         let mut contents = Contents::from(dir.file_name().unwrap().to_str().unwrap());
-        let dir_name = r_keys_str!(contents, keys);
+        let dir_name = r_keys_str!(contents, &keys);
 
         if let Err(e) = dir_name {
             return Err(e);
@@ -73,7 +82,7 @@ fn render_dirs(dir: &Path, target: PathBuf, keys: &Keys, dip: bool) -> Result<()
         create_dir_all(if !dip {
             target.parent().unwrap().join(dir_name.as_str())
         } else {
-            target.clone()
+            target.to_path_buf()
         })
         .unwrap();
 
@@ -83,7 +92,7 @@ fn render_dirs(dir: &Path, target: PathBuf, keys: &Keys, dip: bool) -> Result<()
 
             if path.is_dir() {
                 let mut contents = Contents::from(path.file_name().unwrap().to_str().unwrap());
-                let replacement = r_keys_str!(contents, keys);
+                let replacement = r_keys_str!(contents, &keys);
 
                 if let Err(e) = replacement {
                     return Err(e);
@@ -91,44 +100,56 @@ fn render_dirs(dir: &Path, target: PathBuf, keys: &Keys, dip: bool) -> Result<()
 
                 let replacement = Contents::get_str_from_result(&replacement.unwrap().1);
 
-                render_dirs(&path, target.join(replacement.as_str()), keys, false)?;
+                render_dirs(
+                    &path,
+                    &Arc::new(target.join(replacement.as_str())),
+                    &keys.clone(),
+                    false,
+                )?;
             } else {
                 if dip && path.file_name().unwrap().to_str().unwrap() == ".temple" {
                     continue;
                 }
 
-                let mut contents = Contents::from(path.file_name().unwrap().to_str().unwrap());
-                let replacement = r_keys_str!(contents, keys);
+                let keys = keys.clone();
+                let target = target.clone();
 
-                if let Err(e) = replacement {
-                    return Err(e);
-                }
+                spawn(move || {
+                    let mut contents = Contents::from(path.file_name().unwrap().to_str().unwrap());
+                    let replacement = r_keys_str!(contents, &keys);
 
-                let replacement = Contents::get_str_from_result(&replacement.unwrap().1);
+                    if let Err(e) = replacement {
+                        return Err(e);
+                    }
 
-                let new = OpenOptions::new()
-                    .write(true)
-                    .truncate(true)
-                    .create(true)
-                    .open(target.join(replacement.as_str()))
-                    .unwrap();
+                    let replacement = Contents::get_str_from_result(&replacement.unwrap().1);
 
-                let mut contents =
-                    Contents::from_file(path.parent().unwrap().join(path.file_name().unwrap()))
+                    let new = OpenOptions::new()
+                        .write(true)
+                        .truncate(true)
+                        .create(true)
+                        .open(target.clone().join(replacement.as_str()))
                         .unwrap();
 
-                let replacement = contents.replace(
-                    Indicator::from("{{ ", true).unwrap(),
-                    Indicator::from(" }}", false).unwrap(),
-                    keys,
-                );
+                    let mut contents =
+                        Contents::from_file(path.parent().unwrap().join(path.file_name().unwrap()))
+                            .unwrap();
 
-                let result = match replacement {
-                    Ok(o) => o,
-                    Err(e) => return Err(e),
-                };
+                    let replacement = contents.replace(
+                        Indicator::from("{{ ", true).unwrap(),
+                        Indicator::from(" }}", false).unwrap(),
+                        &*keys,
+                    );
 
-                Contents::write_to_target(&result.1, new);
+                    let result = match replacement {
+                        Ok(o) => o,
+                        Err(e) => return Err(e),
+                    };
+
+                    Contents::write_to_target(&result.1, new);
+
+                    Ok(())
+                });
 
                 /* println!(
                     "Rendering {} in {}",
@@ -201,8 +222,8 @@ fn main() {
 
                 if let Err(e) = render_dirs(
                     &template,
-                    current_dir().unwrap().join(dir_name.as_str()),
-                    &project_keys,
+                    &Arc::new(current_dir().unwrap().join(dir_name.as_str())),
+                    &Arc::new(project_keys),
                     true,
                 ) {
                     println!("Error: {}", e);
