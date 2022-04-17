@@ -8,7 +8,7 @@ pub fn replace_and_write(c: &mut Criterion) {
             let start = black_box(Indicator::from("{{ ", true)).unwrap();
             let end = black_box(Indicator::from(" }}", false)).unwrap();
             let keys = Keys::from("jaja=perro,");
-            let replace = contents.replace(start, end, &keys);
+            let replace = contents.replace(&start, &end, &keys);
 
             let r = if let Ok(res) = replace {
                 match res.0 {
