@@ -17,7 +17,8 @@ path = "src/lib.rs"
 fs_extra = "1.2.0"
 directories = "4.0.1"
 smartstring = "1.0.1"
-clap = { version = "3.1.8", default_features = false, features = ["derive", "std"] }
+lazy_static = "1.4.0"
+clap = { version = "3.1.9", default_features = false, features = ["derive", "std"] }
 
 [dev-dependencies]
 iai = "0.1.1"
