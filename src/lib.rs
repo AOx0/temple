@@ -125,7 +125,7 @@ pub fn app(args: Args) {
 
 lazy_static! {
     static ref START: Indicator = Indicator::from("{{ ", true).unwrap();
-    static ref END: Indicator = Indicator::from("{{ ", true).unwrap();
+    static ref END: Indicator = Indicator::from(" }}", false).unwrap();
 }
 
 fn render_dirs(dir: &Path, target: PathBuf, keys: &Keys, dip: bool) -> Result<(), String> {

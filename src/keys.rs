@@ -7,6 +7,7 @@ use std::str::FromStr;
 
 pub struct Keys {
     pub list: Vec<(String, String)>,
+    pub ignore_list: Vec<String>,
 }
 
 impl Keys {
@@ -42,7 +43,10 @@ impl Keys {
 
 impl From<&str> for Keys {
     fn from(string: &str) -> Keys {
-        let mut keys = Keys { list: vec![] };
+        let mut keys = Keys {
+            list: vec![],
+            ignore_list: vec![],
+        };
         let no_space = string.replace('\n', "");
         let empty_string = String::from_str("").unwrap();
         for statement in no_space.split(',') {
