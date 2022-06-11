@@ -1,5 +1,6 @@
 use crate::indicator::{Indicator, KeyIndicator};
 
+#[derive(Clone)]
 pub struct Indicators {
     pub start: Indicator,
     pub end: Indicator,

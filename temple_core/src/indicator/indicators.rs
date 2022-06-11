@@ -1,5 +1,3 @@
-use std::rc::Rc;
-
 pub trait KeyIndicator
 where
     Self: Sized,
@@ -11,7 +9,7 @@ where
 }
 
 #[derive(Clone, Debug, PartialEq)]
-pub struct IndicatorN(pub(crate) Rc<[u8]>, pub(crate) bool);
+pub struct IndicatorN(pub(crate) Vec<u8>, pub(crate) bool);
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Indicator3D(pub(crate) u8, pub(crate) u8, pub(crate) u8, pub(crate) bool);
@@ -43,7 +41,7 @@ macro_rules! bytes_or_err {
 impl KeyIndicator for IndicatorN {
     fn from_str(string: &str, is_start: bool) -> Result<Self, &'static str> {
         let bytes = bytes_or_err!(string)?;
-        Ok(IndicatorN(Rc::from(bytes), is_start))
+        Ok(IndicatorN(Vec::from(bytes), is_start))
     }
 
     fn find_in(&self, slice: &[u8], from: usize) -> Option<usize> {

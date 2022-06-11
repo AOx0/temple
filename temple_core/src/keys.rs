@@ -1,5 +1,7 @@
 use smartstring::alias::String;
 use std::{fs::OpenOptions, io::Read, path::Path, str::FromStr};
+
+#[derive(Clone)]
 pub struct Keys {
     pub list: Vec<(String, String)>,
     pub ignore_list: Vec<String>,
