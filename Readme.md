@@ -63,7 +63,7 @@ The hierarchy of keys is:
 2. Project defined `~/.temple/template_folder/.temple`
 3. Global defined `~/.temple_conf`
 
-\<br/\>
+<br/>
 
 ### Non UTF-8 friendly
 
