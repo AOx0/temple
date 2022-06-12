@@ -2,6 +2,7 @@ mod indicators;
 pub use indicators::KeyIndicator;
 use indicators::*;
 
+#[derive(Clone)]
 pub enum Indicator {
     I1D(Indicator1D),
     I2D(Indicator2D),

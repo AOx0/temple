@@ -1,11 +1,15 @@
 use std::{
+    cell::RefCell,
     fs::{self, create_dir_all, OpenOptions},
     path::{Path, PathBuf},
+    rc::Rc,
+    thread::{self, JoinHandle},
 };
 
 use temple_core::*;
 
 pub fn render_recursive(
+    handler: Rc<RefCell<Vec<JoinHandle<Result<(), String>>>>>,
     dir: &Path,
     target: PathBuf,
     keys: &Keys,
@@ -44,6 +48,7 @@ pub fn render_recursive(
                 let replacement = Contents::get_str_from_result(&replacement.unwrap().1);
 
                 render_recursive(
+                    handler.clone(),
                     &path,
                     target.join(replacement.as_str()),
                     keys,
@@ -55,33 +60,49 @@ pub fn render_recursive(
                     continue;
                 }
 
-                let mut contents = Contents::from(path.file_name().unwrap().to_str().unwrap());
-                let replacement = contents.replace(indicators, keys);
+                let handle = thread::spawn({
+                    let indicators = indicators.to_owned();
+                    let keys = keys.to_owned();
+                    let target = target.to_owned();
+                    move || {
+                        {
+                            let mut contents =
+                                Contents::from(path.file_name().unwrap().to_str().unwrap());
+                            let replacement = contents.replace(&indicators, &keys);
 
-                if let Err(e) = replacement {
-                    return Err(e);
-                }
+                            if let Err(e) = replacement {
+                                return Err(e);
+                            }
 
-                let replacement = Contents::get_str_from_result(&replacement.unwrap().1);
+                            let replacement =
+                                Contents::get_str_from_result(&replacement.unwrap().1);
 
-                let new = OpenOptions::new()
-                    .write(true)
-                    .truncate(true)
-                    .create(true)
-                    .open(target.clone().join(replacement.as_str()))
-                    .unwrap();
+                            let new = OpenOptions::new()
+                                .write(true)
+                                .truncate(true)
+                                .create(true)
+                                .open(target.clone().join(replacement.as_str()))
+                                .unwrap();
 
-                let mut contents =
-                    Contents::from_file(path.parent().unwrap().join(path.file_name().unwrap()))?;
+                            let mut contents = Contents::from_file(
+                                path.parent().unwrap().join(path.file_name().unwrap()),
+                            )?;
 
-                let replacement = contents.replace(&Indicators::new("{{ ", " }}").unwrap(), &*keys);
+                            let replacement =
+                                contents.replace(&Indicators::new("{{ ", " }}").unwrap(), &keys);
 
-                let result = match replacement {
-                    Ok(o) => o,
-                    Err(e) => return Err(e),
-                };
+                            let result = match replacement {
+                                Ok(o) => o,
+                                Err(e) => return Err(e),
+                            };
 
-                Contents::write_to_target(&result.1, new);
+                            Contents::write_to_target(&result.1, new);
+                        };
+                        Ok(())
+                    }
+                });
+
+                handler.borrow_mut().push(handle);
             }
         }
     }

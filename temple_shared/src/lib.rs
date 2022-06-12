@@ -1,4 +1,7 @@
-use std::{env::current_dir, fs::OpenOptions, io::Write};
+use std::{
+    borrow::BorrowMut, cell::RefCell, env::current_dir, fs::OpenOptions, io::Write, rc::Rc,
+    thread::JoinHandle,
+};
 
 pub use config_files::ConfigFiles;
 use fs_extra::dir::create_all;
@@ -63,6 +66,7 @@ pub fn create_project_from_template(
 
     let home = config_files.temple_home;
     let config = config_files.temple_config;
+    let handles = Rc::new(RefCell::new(vec![]));
 
     let template = home.join(template_name);
 
@@ -85,6 +89,7 @@ pub fn create_project_from_template(
         let indicators = &Indicators::new(start, end).unwrap();
 
         if let Err(e) = renderer::render_recursive(
+            handles.clone(),
             &template,
             current_dir().unwrap().join(project_name),
             &project_keys,
@@ -93,6 +98,21 @@ pub fn create_project_from_template(
         ) {
             fs_extra::dir::remove(current_dir().unwrap().join(project_name)).unwrap();
             return Err(format!("Error: {}", e).into());
+        }
+
+        let handlers = Rc::try_unwrap(handles)
+            .expect("I hereby claim that my_ref is exclusively owned")
+            .into_inner();
+
+        for handler in handlers {
+            let res = handler.join();
+            if let Err(error) = res {
+                return Err(format!("Error: {:?}", error).into());
+            } else if let Ok(res) = res {
+                if let Err(error) = res {
+                    return Err(format!("Error: {:?}", error).into());
+                }
+            }
         }
     } else {
         return Err("Error: Template does not exist".into());
