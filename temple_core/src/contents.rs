@@ -1,38 +1,19 @@
-use crate::{Indicator, Keys, Word};
+use crate::{word::Word, Indicators, Keys};
 use smartstring::alias::String;
-use std::fs;
-use std::fs::OpenOptions;
-use std::io::{Read, Write};
-use std::path::PathBuf;
-
-pub enum NewContents<'a> {
-    Old(&'a [u8]),
-    New(Vec<u8>),
-}
+use std::{
+    fs::{self, OpenOptions},
+    io::{Read, Write},
+    path::PathBuf,
+};
 
 pub struct Contents {
     pub(crate) contents: Vec<u8>,
     pub(crate) origin: PathBuf,
 }
 
-impl Contents {
-    pub fn from_file(path: PathBuf) -> Result<Contents, &'static str> {
-        let mut contents = vec![];
-        let file = OpenOptions::new().read(true).open(&path);
-
-        if let Ok(mut file) = file {
-            if file.read_to_end(&mut contents).is_ok() {
-                Ok(Contents {
-                    contents,
-                    origin: path,
-                })
-            } else {
-                Err("Failed to read contents")
-            }
-        } else {
-            Err("Failed to open file")
-        }
-    }
+pub enum NewContents<'a> {
+    Old(&'a [u8]),
+    New(Vec<u8>),
 }
 
 impl From<&str> for Contents {
@@ -46,6 +27,24 @@ impl From<&str> for Contents {
 }
 
 impl<'a> Contents {
+    pub fn from_file(path: PathBuf) -> Result<Contents, String> {
+        let mut contents = vec![];
+        let file = OpenOptions::new().read(true).open(&path);
+
+        if let Ok(mut file) = file {
+            if file.read_to_end(&mut contents).is_ok() {
+                Ok(Contents {
+                    contents,
+                    origin: path,
+                })
+            } else {
+                Err("Failed to read contents".into())
+            }
+        } else {
+            Err("Failed to open file".into())
+        }
+    }
+
     pub fn get_str_from_result(result: &[NewContents]) -> String {
         let mut f_result = String::new();
 
@@ -62,32 +61,17 @@ impl<'a> Contents {
     pub fn write_to_target(result: &[NewContents], mut target: fs::File) {
         for r in result.iter() {
             match r {
-                NewContents::Old(slice) => target.write_all(slice).unwrap(),
                 NewContents::New(slice) => target.write_all(slice).unwrap(),
+                NewContents::Old(slice) => target.write_all(slice).unwrap(),
             }
         }
     }
 }
 
-impl crate::Parse for Contents {
-    fn find_indicator(slice: &[u8], from: usize, indicator: &Indicator) -> Option<usize> {
-        if slice.is_empty() || slice.len() < 6 {
-            return None;
-        };
-        for i in from..slice.len() - if indicator.3 { 3 } else { 0 } {
-            let byte = slice[i];
-            if byte == indicator.0 && slice[i + 1] == indicator.1 && slice[i + 2] == indicator.2 {
-                return Some(i);
-            }
-        }
-
-        None
-    }
-
-    fn replace(
+impl Contents {
+    pub fn replace(
         &mut self,
-        start_indicator: &Indicator,
-        end_indicator: &Indicator,
+        indicators: &Indicators,
         keys: &Keys,
     ) -> Result<(usize, Vec<NewContents>), String> {
         let mut result: Vec<NewContents> = Vec::with_capacity(self.contents.len());
@@ -96,8 +80,8 @@ impl crate::Parse for Contents {
         let mut word = Word::new();
         let mut last_i: usize = 0;
 
-        if !(Self::find_indicator(&self.contents, i, start_indicator).is_some()
-            && Self::find_indicator(&self.contents, i, end_indicator).is_some())
+        if !(indicators.find_in(&self.contents, i, true).is_some()
+            && indicators.find_in(&self.contents, i, false).is_some())
         {
             return Ok((0, vec![NewContents::Old(&self.contents[..])]));
         }
@@ -106,23 +90,19 @@ impl crate::Parse for Contents {
             if i >= self.contents.as_slice().len() {
                 break;
             }
-            if self.contents[i] == start_indicator.0 {
-                if let Some(mut some_start) =
-                    Self::find_indicator(&self.contents, i, start_indicator)
-                {
-                    if let Some(some_end) = Self::find_indicator(&self.contents, i, end_indicator) {
-                        result.push(NewContents::Old(&self.contents[last_i..some_start]));
 
-                        some_start += 3;
+            if self.contents[i] == indicators.start_char() {
+                if let Some(mut start) = indicators.find_in(&self.contents, i, true) {
+                    if let Some(end) = indicators.find_in(&self.contents, i, false) {
+                        result.push(NewContents::Old(&self.contents[last_i..start]));
 
-                        word.set(
-                            &self.contents.as_slice()[some_start..some_end],
-                            some_end - some_start,
-                        );
+                        start += indicators.start_size();
+
+                        word.set(&self.contents.as_slice()[start..end], end - start);
 
                         let replacement = keys.get_match(
                             std::str::from_utf8(&word.contents[0..word.size]).unwrap(),
-                            &self.origin,
+                            Some(&self.origin),
                         );
 
                         match replacement {
@@ -131,8 +111,8 @@ impl crate::Parse for Contents {
                         }
 
                         sum += 1;
-                        i = some_end + 2;
-                        last_i = some_end + 3;
+                        i = end + indicators.end_size() - 1;
+                        last_i = end + indicators.end_size();
                     }
                 }
             }

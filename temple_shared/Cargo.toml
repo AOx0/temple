@@ -1,0 +1,11 @@
+[package]
+name = "temple_shared"
+version = "0.0.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+temple_core = { path="../temple_core" }
+fs_extra = "1.2.0"
+directories = "4.0.1"

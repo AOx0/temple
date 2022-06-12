@@ -1,49 +1,45 @@
-# temple
+# Temple
 
 Fast experimental project template renderer with easy setup and usage.
 
-</br>
-
 ## Installation
 
-    cargo install --git https://github.com/AOx0/temple
+	cargo install --git https://github.com/AOx0/temple
 
-</br>
-
-## Why temple?
-
-
+##  Why temple?
 
 ### 1. It's fast.
 
-It is fast, *very fast*. As shown in the benchmark results, where each tool rendered the same template 300 times:
+It is fast, very fast. As shown in the benchmark results, where each tool rendered the same template 1500 times:
 
-* ≈ 5x times faster (mean) than [`project-init`](https://github.com/legion-labs/project-init)
-    * 7x faster in the worst case
-    * 5x faster in the best case
+| Command | Mean [ms]() | Min [ms]() | Max [ms]() | Relative |
+|:---|---:|---:|---:|---:|
+| `tnew test test2` | 9.4 ± 1.1 | 8.0 | 19.3 | 1.00 |
+| `pi new test test1 -f` | 38.4 ± 4.5 | 32.4 | 64.8 | 4.07 ± 0.67 |
+| `cookiecutter test --no-input -f` | 410.9 ± 96.5 | 325.0 | 1373.8 | 43.51 ± 11.38 |
 
-* ≈ 52x times faster (mean) than [`cookiecutter`](https://github.com/cookiecutter/cookiecutter)
-    * 42x faster in the worst case
-    * 60x faster in the best case
-
-| Command                                      | Mean [ms] | Min [ms] | Max [ms] |
-|:---------------------------------------------|---:|---:|---:|
-| `tem new test project`                       | 5.9 ± 0.7 | 5.0 | 9.4 | 
-| `pi new test project -f`                     | 28.6 ± 4.2 | 23.6 | 66.5 |
-| `cookiecutter -f ~/temple/test2/ --no-input` | 330.2 ± 14.4 | 299.3 | 389.6 |
-
-</br>
+	Summary
+	  'tnew test test' ran
+	    4.07 ± 0.67 times faster than 'pi new test test -f'
+	   43.51 ± 11.38 times faster than 'cookiecutter test --no-input -f'
 
 ### 2. Easy set-up.
 
 To create a new template, just drop the folder in `~/.temple` and create a `.temple` file where you can define project-level keys. To define keys, follow the syntax:
 
-    key=Value with spaces,
-    another_key=value,
+	key=Value with spaces,
+	another_key=value,
 
 Or with a single line (and how it should be done when defining keys with arguments):
 
-    key=Value with spaces,another_key=value,
+	key=Value with spaces,another_key=value,
+
+You can define custom key-indicators. By default its `{{ ` for `start_indicator ` and ` }}` for `start_indicator `,
+
+You can set them as following:
+
+	start_indicator=[[[
+	end_indicator=]]]
 
 When defining keys there must not be more spaces than desired ones (key detection is primitive):
 
@@ -52,17 +48,13 @@ When defining keys there must not be more spaces than desired ones (key detectio
 
 - Wrong: 
 
-```
-key=Value with spaces , 
-another_key=value
-```
-    
+	key=Value with spaces , 
+	another_key=value
+
 - Good:  
-    
-```
-key=Value with spaces,
-another_key=value
-```
+
+	key=Value with spaces,
+	another_key=value
 
 
 The hierarchy of keys is:
@@ -71,8 +63,9 @@ The hierarchy of keys is:
 2. Project defined `~/.temple/template_folder/.temple`
 3. Global defined `~/.temple_conf`
 
-</br>
+\<br/\>
 
 ### Non UTF-8 friendly
 
 `temple` analyzes every file as a vector of bytes, only substitutions get converted to strings and panic when failed, so you can safely analyze executables and there shouldn't be any byte loses
+

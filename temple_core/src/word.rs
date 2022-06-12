@@ -1,9 +1,11 @@
-use std::fmt::{Display, Formatter};
-use std::str::FromStr;
+use std::{
+    fmt::{Display, Formatter},
+    str::FromStr,
+};
 
 #[derive(Clone, Copy)]
 pub struct Word {
-    pub(crate) contents: [u8; 100],
+    pub(crate) contents: [u8; 300],
     pub(crate) size: usize,
 }
 
@@ -21,7 +23,7 @@ impl Display for Word {
 impl Word {
     pub(crate) fn new() -> Word {
         Word {
-            contents: [0u8; 100],
+            contents: [0u8; 300],
             size: 0usize,
         }
     }
