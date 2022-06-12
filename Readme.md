@@ -12,10 +12,10 @@ Fast experimental project template renderer with easy setup and usage.
 
 It is fast, very fast. As shown in the benchmark results, where each tool rendered the same template 1500 times:
 
-| Command | Mean [ms]() | Min [ms]() | Max [ms]() | Relative |
+| Command | Mean ms | Min ms | Max ms | Relative |
 |:---|---:|---:|---:|---:|
-| `tnew test test2` | 9.4 ± 1.1 | 8.0 | 19.3 | 1.00 |
-| `pi new test test1 -f` | 38.4 ± 4.5 | 32.4 | 64.8 | 4.07 ± 0.67 |
+| `tnew test test` | 9.4 ± 1.1 | 8.0 | 19.3 | 1.00 |
+| `pi new test test -f` | 38.4 ± 4.5 | 32.4 | 64.8 | 4.07 ± 0.67 |
 | `cookiecutter test --no-input -f` | 410.9 ± 96.5 | 325.0 | 1373.8 | 43.51 ± 11.38 |
 
 	Summary
@@ -38,7 +38,7 @@ You can define custom key-indicators. By default its `{{ ` for `start_indicator
 
 You can set them as following:
 
-	start_indicator=[[[
+	start_indicator=[[[,
 	end_indicator=]]]
 
 When defining keys there must not be more spaces than desired ones (key detection is primitive):
@@ -48,13 +48,13 @@ When defining keys there must not be more spaces than desired ones (key detectio
 
 - Wrong: 
 
-	key=Value with spaces , 
-	another_key=value
+		key=Value with spaces , 
+		another_key=value
 
 - Good:  
 
-	key=Value with spaces,
-	another_key=value
+		key=Value with spaces,
+		another_key=value
 
 
 The hierarchy of keys is:
