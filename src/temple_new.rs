@@ -13,6 +13,7 @@ fn main() {
         args.cli_keys,
         temple_files,
         args.local,
+        args.in_place,
     );
 
     if let Err(msg) = result {

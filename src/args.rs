@@ -16,6 +16,10 @@ pub struct ArgsNew {
     /// Prefer local (./.temple/template_name) if available [default: prefer ~/.temple/template_name]
     #[clap(long, short)]
     pub local: bool,
+
+    /// Place contents in_place (./.) instead of creating a folder
+    #[clap(long, short)]
+    pub in_place: bool,
 }
 
 #[derive(Parser)]
@@ -41,6 +45,10 @@ pub enum Commands {
         /// Prefer local (./.temple/template_name) if available [default: prefer ~/.temple/template_name]
         #[clap(long, short)]
         local: bool,
+
+        /// Place contents in_place (./.) instead of creating a folder
+        #[clap(long, short)]
+        in_place: bool,
     },
     List,
     Init,

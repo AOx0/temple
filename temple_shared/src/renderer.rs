@@ -16,6 +16,7 @@ pub fn render_recursive(
     keys: &Keys,
     dip: bool,
     indicators: &Indicators,
+    dry_run: bool,
 ) -> Result<(), String> {
     if dir.is_dir() {
         let mut contents = Contents::from(dir.file_name().unwrap().to_str().unwrap());
@@ -27,12 +28,29 @@ pub fn render_recursive(
 
         let dir_name = Contents::get_str_from_result(&dir_name.unwrap().1);
 
-        create_dir_all(if !dip {
-            target.parent().unwrap().join(dir_name.as_str())
-        } else {
-            target.clone()
-        })
-        .unwrap();
+        if dip && target.parent().unwrap().join(dir_name.as_str()).exists() {
+            return Err(format!(
+                "Error: directory {} already exists",
+                target
+                    .parent()
+                    .unwrap()
+                    .join(dir_name.as_str())
+                    .file_name()
+                    .unwrap()
+                    .to_str()
+                    .unwrap()
+            )
+            .into());
+        }
+
+        if !dry_run {
+            create_dir_all(if !dip {
+                target.parent().unwrap().join(dir_name.as_str())
+            } else {
+                target.clone()
+            })
+            .unwrap()
+        }
 
         for entry in fs::read_dir(dir).unwrap() {
             let entry = entry.unwrap();
@@ -48,23 +66,32 @@ pub fn render_recursive(
 
                 let replacement = Contents::get_str_from_result(&replacement.unwrap().1);
 
-                render_recursive(
-                    handler.clone(),
-                    &path,
-                    target.join(replacement.as_str()),
-                    keys,
-                    false,
-                    indicators,
-                )?;
+                if !dry_run {
+                    render_recursive(
+                        handler.clone(),
+                        &path,
+                        target.join(replacement.as_str()),
+                        keys,
+                        false,
+                        indicators,
+                        dry_run,
+                    )?;
+                }
             } else {
-                if dip && path.file_name().unwrap().to_str().unwrap() == ".temple" {
+                let name = path.file_name().unwrap().to_str().unwrap();
+                if dip && name == ".temple" {
                     continue;
                 }
 
-                let handle = thread::spawn({
+                if [".DS_Store"].contains(&name) {
+                    continue;
+                }
+
+                let actions = {
                     let indicators = indicators.to_owned();
                     let keys = keys.to_owned();
                     let target = target.to_owned();
+
                     move || {
                         {
                             let mut contents =
@@ -78,32 +105,54 @@ pub fn render_recursive(
                             let replacement =
                                 Contents::get_str_from_result(&replacement.unwrap().1);
 
-                            let new = OpenOptions::new()
-                                .write(true)
-                                .truncate(true)
-                                .create(true)
-                                .open(target.clone().join(replacement.as_str()))
-                                .unwrap();
+                            if dip && target.clone().join(replacement.as_str()).exists() {
+                                return Err(format!(
+                                    "Error: file {} already exists",
+                                    target
+                                        .clone()
+                                        .join(replacement.as_str())
+                                        .file_name()
+                                        .unwrap()
+                                        .to_str()
+                                        .unwrap()
+                                )
+                                .into());
+                            }
 
-                            let mut contents = Contents::from_file(
-                                path.parent().unwrap().join(path.file_name().unwrap()),
-                            )?;
+                            if !dry_run {
+                                let new = OpenOptions::new()
+                                    .write(true)
+                                    .truncate(true)
+                                    .create(!dry_run)
+                                    .open(target.clone().join(replacement.as_str()))
+                                    .unwrap();
 
-                            let replacement =
-                                contents.replace(&Indicators::new("{{ ", " }}").unwrap(), &keys);
+                                let mut contents = Contents::from_file(
+                                    path.parent().unwrap().join(path.file_name().unwrap()),
+                                )?;
 
-                            let result = match replacement {
-                                Ok(o) => o,
-                                Err(e) => return Err(e),
-                            };
+                                let replacement = contents
+                                    .replace(&Indicators::new("{{ ", " }}").unwrap(), &keys);
 
-                            Contents::write_to_target(&result.1, new);
+                                let result = match replacement {
+                                    Ok(o) => o,
+                                    Err(e) => return Err(e),
+                                };
+
+                                Contents::write_to_target(&result.1, new);
+                            }
                         };
                         Ok(())
                     }
-                });
+                };
 
-                handler.borrow_mut().push(handle);
+                if !dry_run {
+                    let handle = thread::spawn(actions);
+
+                    handler.borrow_mut().push(handle);
+                } else {
+                    actions()?;
+                }
             }
         }
     }

@@ -85,19 +85,38 @@ impl Templates {
     }
 }
 
+fn find_local_templates_folder(from: PathBuf, config_files: &ConfigFiles) -> Option<PathBuf> {
+    if config_files.temple_home == from {
+        return None;
+    }
+
+    let mut current = from;
+    loop {
+        if current.join(".temple").exists() && current.join(".temple").is_dir() {
+            return Some(current.join(".temple"));
+        } else {
+            let parent = current.parent();
+            if let Some(parent) = parent {
+                current = parent.into();
+            } else {
+                return None;
+            }
+        }
+    }
+}
+
 fn get_available_templates(config_files: &ConfigFiles) -> Result<Templates, String> {
     config_files.exists()?;
 
-    let contents_local_path = current_dir().unwrap().join(".temple");
-    let contents_local = if contents_local_path.exists() && contents_local_path.is_dir() {
-        Some(contents_local_path)
-    } else {
-        None
-    };
+    let contents_local = find_local_templates_folder(current_dir().unwrap(), config_files);
 
     let available = get_templates_in_path(&config_files.temple_home);
     let available_local = if let Some(path) = contents_local {
-        get_templates_in_path(&path)
+        if path != config_files.temple_home {
+            get_templates_in_path(&path)
+        } else {
+            vec![]
+        }
     } else {
         vec![]
     };
@@ -120,7 +139,7 @@ pub fn list_available_templates(config_files: ConfigFiles) -> Result<(), String>
     let templates = get_available_templates(&config_files)?;
 
     if !templates.global.is_empty() {
-        println!("Available global templates (~./.temple): ");
+        println!("Available global templates (~/.temple): ");
         templates
             .global
             .iter()
@@ -151,7 +170,8 @@ pub fn create_project_from_template(
     project_name: &str,
     cli_keys: Vec<std::string::String>,
     config_files: ConfigFiles,
-    local: bool,
+    prefer_local: bool,
+    place_in_place: bool,
 ) -> Result<(), String> {
     config_files.exists()?;
 
@@ -160,9 +180,9 @@ pub fn create_project_from_template(
     let config = config_files.temple_config;
     let handles = Rc::new(RefCell::new(vec![]));
 
-    let template = templates.get_named(template_name, local);
+    let template = templates.get_named(template_name, prefer_local);
 
-    let template = if let Some(template) = template {
+    let template: &Path = if let Some(template) = template {
         if template.path.is_dir() && template.path.join(".temple").exists() {
             &template.path
         } else {
@@ -189,13 +209,40 @@ pub fn create_project_from_template(
 
     let indicators = &Indicators::new(start, end).unwrap();
 
+    let target = current_dir().unwrap();
+
+    let target = if place_in_place {
+        target
+    } else {
+        target.join(project_name)
+    };
+
+    if place_in_place {
+        renderer::render_recursive(
+            handles.clone(),
+            template,
+            target.clone(),
+            &project_keys,
+            true,
+            indicators,
+            true,
+        )?;
+    } else if target.exists() {
+        return Err(format!(
+            "Error: directory {} already exists",
+            target.file_name().unwrap().to_str().unwrap()
+        )
+        .into());
+    }
+
     if let Err(e) = renderer::render_recursive(
         handles.clone(),
         template,
-        current_dir().unwrap().join(project_name),
+        target,
         &project_keys,
         true,
         indicators,
+        false,
     ) {
         fs_extra::dir::remove(current_dir().unwrap().join(project_name)).unwrap();
         return Err(format!("Error: {}", e).into());
