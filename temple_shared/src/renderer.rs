@@ -8,8 +8,9 @@ use std::{
 
 use temple_core::*;
 
+pub type Mu<T> = Rc<RefCell<T>>;
 pub fn render_recursive(
-    handler: Rc<RefCell<Vec<JoinHandle<Result<(), String>>>>>,
+    handler: Mu<Vec<JoinHandle<Result<(), String>>>>,
     dir: &Path,
     target: PathBuf,
     keys: &Keys,

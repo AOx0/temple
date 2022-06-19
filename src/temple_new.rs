@@ -12,6 +12,7 @@ fn main() {
         &args.project_name,
         args.cli_keys,
         temple_files,
+        args.local,
     );
 
     if let Err(msg) = result {

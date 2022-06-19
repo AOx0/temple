@@ -12,11 +12,13 @@ fn main() {
             template_name,
             project_name,
             cli_keys,
+            local,
         } => temple_shared::create_project_from_template(
             &template_name,
             &project_name,
             cli_keys,
             temple_files,
+            local,
         ),
         Commands::List => temple_shared::list_available_templates(temple_files),
         Commands::Init => temple_shared::init_temple_config_files(temple_files),

@@ -1,11 +1,14 @@
-use std::{
-    borrow::BorrowMut, cell::RefCell, env::current_dir, fs::OpenOptions, io::Write, rc::Rc,
-    thread::JoinHandle,
-};
-
 pub use config_files::ConfigFiles;
 use fs_extra::dir::create_all;
-pub use temple_core::String;
+use std::{
+    cell::RefCell,
+    env::current_dir,
+    fs::OpenOptions,
+    io::Write,
+    path::{Path, PathBuf},
+    rc::Rc,
+};
+use temple_core::String;
 use temple_core::*;
 
 mod config_files;
@@ -32,25 +35,112 @@ pub fn init_temple_config_files(config_files: ConfigFiles) -> Result<(), String>
     Ok(())
 }
 
-pub fn list_available_templates(config_files: ConfigFiles) -> Result<(), String> {
-    config_files.exists()?;
-
-    let contents = config_files.temple_home.read_dir().unwrap();
-    let mut available: Vec<String> = vec![];
+fn get_templates_in_path(path: &Path) -> Vec<Template> {
+    let contents = path.read_dir().unwrap();
+    let mut available = vec![];
 
     for c in contents {
         let c = c.unwrap();
 
         if c.file_type().unwrap().is_dir() && c.path().join(".temple").exists() {
-            available.push(c.file_name().as_os_str().to_str().unwrap().into())
+            available.push(Template {
+                path: c.path(),
+                name: c.file_name().as_os_str().to_str().unwrap().into(),
+            })
         }
     }
 
-    if available.is_empty() {
-        println!("No available templates. To add templates add them in ~/.temple.");
+    available
+}
+
+#[derive(Clone)]
+struct Template {
+    pub path: PathBuf,
+    pub name: String,
+}
+
+struct Templates {
+    pub global: Vec<Template>,
+    pub local: Vec<Template>,
+}
+
+impl Templates {
+    pub fn get_named(&self, name: &str, prefer_local: bool) -> Option<&Template> {
+        let local = self.local.iter().find(|&t| t.name == name);
+        let global = self.global.iter().find(|&t| t.name == name);
+
+        if local.is_some() && global.is_some() {
+            if prefer_local {
+                local
+            } else {
+                global
+            }
+        } else if global.is_some() {
+            global
+        } else if local.is_some() {
+            local
+        } else {
+            None
+        }
+    }
+}
+
+fn get_available_templates(config_files: &ConfigFiles) -> Result<Templates, String> {
+    config_files.exists()?;
+
+    let contents_local_path = current_dir().unwrap().join(".temple");
+    let contents_local = if contents_local_path.exists() && contents_local_path.is_dir() {
+        Some(contents_local_path)
     } else {
-        println!("Available templates: ");
-        available.iter().for_each(|a| println!("   * {}", a));
+        None
+    };
+
+    let available = get_templates_in_path(&config_files.temple_home);
+    let available_local = if let Some(path) = contents_local {
+        get_templates_in_path(&path)
+    } else {
+        vec![]
+    };
+
+    if available.is_empty() && available_local.is_empty() {
+        return Err(
+            "No available templates. To add templates add them in ~/.temple for global templates \
+or ./.temple for local templates."
+                .into(),
+        );
+    }
+
+    Ok(Templates {
+        global: available,
+        local: available_local,
+    })
+}
+
+pub fn list_available_templates(config_files: ConfigFiles) -> Result<(), String> {
+    let templates = get_available_templates(&config_files)?;
+
+    if !templates.global.is_empty() {
+        println!("Available global templates (~./.temple): ");
+        templates
+            .global
+            .iter()
+            .for_each(|a| println!("   * {}", a.name));
+    }
+
+    if !templates.local.is_empty() {
+        println!(
+            "Available local templates ({}/.temple): ",
+            current_dir()
+                .unwrap()
+                .file_name()
+                .unwrap()
+                .to_str()
+                .unwrap()
+        );
+        templates
+            .local
+            .iter()
+            .for_each(|a| println!("   * {}", a.name));
     }
 
     Ok(())
@@ -59,63 +149,69 @@ pub fn list_available_templates(config_files: ConfigFiles) -> Result<(), String>
 pub fn create_project_from_template(
     template_name: &str,
     project_name: &str,
-    cli_keys: Vec<String>,
+    cli_keys: Vec<std::string::String>,
     config_files: ConfigFiles,
+    local: bool,
 ) -> Result<(), String> {
     config_files.exists()?;
 
-    let home = config_files.temple_home;
+    let templates = get_available_templates(&config_files)?;
+
     let config = config_files.temple_config;
     let handles = Rc::new(RefCell::new(vec![]));
 
-    let template = home.join(template_name);
+    let template = templates.get_named(template_name, local);
 
-    if template.is_dir() && template.join(".temple").exists() {
-        let keys_project_config = Keys::from_file_contents(&template.join(".temple"));
-        let keys_project_user = Keys::from(cli_keys.join(" ").as_str());
-        let mut project_keys = Keys::from(format!("project={}", &project_name).as_str());
-
-        project_keys.add(keys_project_user);
-        project_keys.add(keys_project_config);
-        project_keys.add(Keys::from_file_contents(&config));
-
-        let start = project_keys
-            .get_match("start_indicator", None)
-            .unwrap_or("{{ ");
-        let end = project_keys
-            .get_match("start_indicator", None)
-            .unwrap_or(" }}");
-
-        let indicators = &Indicators::new(start, end).unwrap();
-
-        if let Err(e) = renderer::render_recursive(
-            handles.clone(),
-            &template,
-            current_dir().unwrap().join(project_name),
-            &project_keys,
-            true,
-            indicators,
-        ) {
-            fs_extra::dir::remove(current_dir().unwrap().join(project_name)).unwrap();
-            return Err(format!("Error: {}", e).into());
-        }
-
-        let handlers = Rc::try_unwrap(handles)
-            .expect("I hereby claim that my_ref is exclusively owned")
-            .into_inner();
-
-        for handler in handlers {
-            let res = handler.join();
-            if let Err(error) = res {
-                return Err(format!("Error: {:?}", error).into());
-            } else if let Ok(res) = res {
-                if let Err(error) = res {
-                    return Err(format!("Error: {:?}", error).into());
-                }
-            }
+    let template = if let Some(template) = template {
+        if template.path.is_dir() && template.path.join(".temple").exists() {
+            &template.path
+        } else {
+            return Err("Error: Template does not exist".into());
         }
     } else {
         return Err("Error: Template does not exist".into());
+    };
+
+    let keys_project_config = Keys::from_file_contents(&template.join(".temple"));
+    let keys_project_user = Keys::from(cli_keys.join(" ").as_str());
+    let mut project_keys = Keys::from(format!("project={}", &project_name).as_str());
+
+    project_keys.add(keys_project_user);
+    project_keys.add(keys_project_config);
+    project_keys.add(Keys::from_file_contents(&config));
+
+    let start = project_keys
+        .get_match("start_indicator", None)
+        .unwrap_or("{{ ");
+    let end = project_keys
+        .get_match("start_indicator", None)
+        .unwrap_or(" }}");
+
+    let indicators = &Indicators::new(start, end).unwrap();
+
+    if let Err(e) = renderer::render_recursive(
+        handles.clone(),
+        template,
+        current_dir().unwrap().join(project_name),
+        &project_keys,
+        true,
+        indicators,
+    ) {
+        fs_extra::dir::remove(current_dir().unwrap().join(project_name)).unwrap();
+        return Err(format!("Error: {}", e).into());
+    }
+
+    let handlers = Rc::try_unwrap(handles)
+        .expect("I hereby claim that my_ref is exclusively owned")
+        .into_inner();
+
+    for handler in handlers {
+        let res = handler.join();
+        if let Err(error) = res {
+            return Err(format!("Error: {:?}", error).into());
+        } else if let Ok(Err(error)) = res {
+            return Err(format!("Error: {:?}", error).into());
+        }
     }
 
     Ok(())

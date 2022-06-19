@@ -1,5 +1,4 @@
 pub use clap::{Parser, Subcommand};
-use temple_shared::*;
 
 #[derive(Parser)]
 #[clap(version)]
@@ -13,6 +12,10 @@ pub struct ArgsNew {
     /// Custom defined keys from terminal
     #[clap(default_value = "")]
     pub cli_keys: Vec<String>,
+
+    /// Prefer local (./.temple/template_name) if available [default: prefer ~/.temple/template_name]
+    #[clap(long, short)]
+    pub local: bool,
 }
 
 #[derive(Parser)]
@@ -34,6 +37,10 @@ pub enum Commands {
         /// Custom defined keys from terminal
         #[clap(default_value = "")]
         cli_keys: Vec<String>,
+
+        /// Prefer local (./.temple/template_name) if available [default: prefer ~/.temple/template_name]
+        #[clap(long, short)]
+        local: bool,
     },
     List,
     Init,
