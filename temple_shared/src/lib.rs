@@ -172,6 +172,7 @@ pub fn create_project_from_template(
     config_files: ConfigFiles,
     prefer_local: bool,
     place_in_place: bool,
+    overwrite: bool,
 ) -> Result<(), String> {
     config_files.exists()?;
 
@@ -226,8 +227,9 @@ pub fn create_project_from_template(
             true,
             indicators,
             true,
+            overwrite,
         )?;
-    } else if target.exists() {
+    } else if target.exists() && !overwrite {
         return Err(format!(
             "Error: directory {} already exists",
             target.file_name().unwrap().to_str().unwrap()
@@ -243,6 +245,7 @@ pub fn create_project_from_template(
         true,
         indicators,
         false,
+        overwrite,
     ) {
         fs_extra::dir::remove(current_dir().unwrap().join(project_name)).unwrap();
         return Err(format!("Error: {}", e).into());

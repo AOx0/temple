@@ -14,6 +14,7 @@ fn main() {
         temple_files,
         args.local,
         args.in_place,
+        args.overwrite,
     );
 
     if let Err(msg) = result {

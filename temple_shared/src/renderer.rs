@@ -17,6 +17,7 @@ pub fn render_recursive(
     dip: bool,
     indicators: &Indicators,
     dry_run: bool,
+    overwrite: bool,
 ) -> Result<(), String> {
     if dir.is_dir() {
         let mut contents = Contents::from(dir.file_name().unwrap().to_str().unwrap());
@@ -28,7 +29,7 @@ pub fn render_recursive(
 
         let dir_name = Contents::get_str_from_result(&dir_name.unwrap().1);
 
-        if dip && target.parent().unwrap().join(dir_name.as_str()).exists() {
+        if !overwrite && dip && target.parent().unwrap().join(dir_name.as_str()).exists() {
             return Err(format!(
                 "Error: directory {} already exists",
                 target
@@ -75,6 +76,7 @@ pub fn render_recursive(
                         false,
                         indicators,
                         dry_run,
+                        overwrite,
                     )?;
                 }
             } else {
@@ -105,7 +107,10 @@ pub fn render_recursive(
                             let replacement =
                                 Contents::get_str_from_result(&replacement.unwrap().1);
 
-                            if dip && target.clone().join(replacement.as_str()).exists() {
+                            if !overwrite
+                                && dip
+                                && target.clone().join(replacement.as_str()).exists()
+                            {
                                 return Err(format!(
                                     "Error: file {} already exists",
                                     target

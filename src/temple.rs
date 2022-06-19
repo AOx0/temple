@@ -14,6 +14,7 @@ fn main() {
             cli_keys,
             local,
             in_place,
+            overwrite,
         } => temple_shared::create_project_from_template(
             &template_name,
             &project_name,
@@ -21,6 +22,7 @@ fn main() {
             temple_files,
             local,
             in_place,
+            overwrite,
         ),
         Commands::List => temple_shared::list_available_templates(temple_files),
         Commands::Init => temple_shared::init_temple_config_files(temple_files),

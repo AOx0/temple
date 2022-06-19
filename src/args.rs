@@ -20,6 +20,10 @@ pub struct ArgsNew {
     /// Place contents in_place (./.) instead of creating a folder
     #[clap(long, short)]
     pub in_place: bool,
+
+    /// Overwrite any already existing files
+    #[clap(long, short)]
+    pub overwrite: bool,
 }
 
 #[derive(Parser)]
@@ -49,6 +53,10 @@ pub enum Commands {
         /// Place contents in_place (./.) instead of creating a folder
         #[clap(long, short)]
         in_place: bool,
+
+        /// Overwrite any already existing files
+        #[clap(long, short)]
+        overwrite: bool,
     },
     List,
     Init,
