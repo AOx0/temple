@@ -205,7 +205,7 @@ pub fn create_project_from_template(
         .get_match("start_indicator", None)
         .unwrap_or("{{ ");
     let end = project_keys
-        .get_match("start_indicator", None)
+        .get_match("end_indicator", None)
         .unwrap_or(" }}");
 
     let indicators = &Indicators::new(start, end).unwrap();
@@ -228,6 +228,7 @@ pub fn create_project_from_template(
             indicators,
             true,
             overwrite,
+            place_in_place,
         )?;
     } else if target.exists() && !overwrite {
         return Err(format!(
@@ -246,6 +247,7 @@ pub fn create_project_from_template(
         indicators,
         false,
         overwrite,
+        place_in_place,
     ) {
         fs_extra::dir::remove(current_dir().unwrap().join(project_name)).unwrap();
         return Err(format!("Error: {}", e).into());

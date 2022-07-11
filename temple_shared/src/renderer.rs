@@ -18,9 +18,15 @@ pub fn render_recursive(
     indicators: &Indicators,
     dry_run: bool,
     overwrite: bool,
+    in_place: bool,
 ) -> Result<(), String> {
     if dir.is_dir() {
-        let mut contents = Contents::from(dir.file_name().unwrap().to_str().unwrap());
+        let mut contents = if dip && !in_place {
+            Contents::from("{{ project }}")
+        } else {
+            Contents::from(dir.file_name().unwrap().to_str().unwrap())
+        };
+
         let dir_name = contents.replace(indicators, keys);
 
         if let Err(e) = dir_name {
@@ -29,7 +35,11 @@ pub fn render_recursive(
 
         let dir_name = Contents::get_str_from_result(&dir_name.unwrap().1);
 
-        if !overwrite && dip && target.parent().unwrap().join(dir_name.as_str()).exists() {
+        if !overwrite
+            && !in_place
+            && dip
+            && target.parent().unwrap().join(dir_name.as_str()).exists()
+        {
             return Err(format!(
                 "Error: directory {} already exists",
                 target
@@ -77,6 +87,7 @@ pub fn render_recursive(
                         indicators,
                         dry_run,
                         overwrite,
+                        in_place,
                     )?;
                 }
             } else {
