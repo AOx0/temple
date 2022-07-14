@@ -23,10 +23,11 @@ impl Keys {
             Err(String::from("Key not found"))
         } else {
             Err(format!(
-                "No value found for key \"{0}\" in file {1}.\nSet it:\n\
-             \t1. In .temple_conf as {0}=value;\n\
-             \t2. In .temple/template/.temple as {0}=value\n\
-             \t3. As argument:  `temple new template new_project {0}=value`",
+                "No value found for key \"{0}\", it was referenced in file {1}.\nSet it:\n\
+             \t1. In ~/.temple_conf as {0}=value;\n\
+             \t2. In ~/.temple/template/.temple as {0}=value\n\
+             \t3. In ./.temple/template/.temple as {0}=value\n\
+             \t4. As argument:  `temple new template new_project {0}=value`",
                 key,
                 file.unwrap().display()
             )

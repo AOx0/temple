@@ -24,8 +24,8 @@ pub fn init_temple_config_files(config_files: ConfigFiles) -> Result<(), String>
         .unwrap();
 
     let default_config = "\
-            name=Your name;\n\
-            github=your_github_user;\n"
+            name=Your name,\n\
+            github=your_github_user,\n"
         .as_bytes();
 
     conf.write_all(default_config).unwrap();
@@ -250,7 +250,7 @@ pub fn create_project_from_template(
         place_in_place,
     ) {
         fs_extra::dir::remove(current_dir().unwrap().join(project_name)).unwrap();
-        return Err(format!("Error: {}", e).into());
+        return Err(e);
     }
 
     let handlers = Rc::try_unwrap(handles)
@@ -262,7 +262,7 @@ pub fn create_project_from_template(
         if let Err(error) = res {
             return Err(format!("Error: {:?}", error).into());
         } else if let Ok(Err(error)) = res {
-            return Err(format!("Error: {:?}", error).into());
+            return Err(error);
         }
     }
 

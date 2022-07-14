@@ -22,7 +22,9 @@ pub fn render_recursive(
 ) -> Result<(), String> {
     if dir.is_dir() {
         let mut contents = if dip && !in_place {
-            Contents::from("{{ project }}")
+            let project_template =  format!("{}project{}", std::string::String::from(indicators.start.clone()),  std::string::String::from(indicators.end.clone()) );
+            // println!("{project_template}");
+            Contents::from(project_template.as_str())
         } else {
             Contents::from(dir.file_name().unwrap().to_str().unwrap())
         };
@@ -110,13 +112,18 @@ pub fn render_recursive(
                             let mut contents =
                                 Contents::from(path.file_name().unwrap().to_str().unwrap());
                             let replacement = contents.replace(&indicators, &keys);
-
+                            
+                            
                             if let Err(e) = replacement {
                                 return Err(e);
                             }
 
+
                             let replacement =
                                 Contents::get_str_from_result(&replacement.unwrap().1);
+
+                            // println!("Replacing in {} file name {} to {}", target.display(), path.file_name().unwrap().to_str().unwrap(), replacement );
+
 
                             if !overwrite
                                 && dip
@@ -148,12 +155,15 @@ pub fn render_recursive(
                                 )?;
 
                                 let replacement = contents
-                                    .replace(&Indicators::new("{{ ", " }}").unwrap(), &keys);
+                                    .replace(&indicators, &keys);
+
 
                                 let result = match replacement {
                                     Ok(o) => o,
                                     Err(e) => return Err(e),
                                 };
+
+                                //println!("Replacing contents of \"{}\".", path.parent().unwrap().join(path.file_name().unwrap()).display());
 
                                 Contents::write_to_target(&result.1, new);
                             }

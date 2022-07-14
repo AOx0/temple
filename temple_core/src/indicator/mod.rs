@@ -56,3 +56,22 @@ impl KeyIndicator for Indicator {
         }
     }
 }
+
+impl From<Indicator> for String {
+    fn from(thing: Indicator) -> String {
+        match thing {
+            Indicator::I1D(i) => {
+                std::str::from_utf8(&[i.0]).unwrap().to_owned()  
+            },
+            Indicator::I2D(i) => {
+                std::str::from_utf8(&[i.0, i.1]).unwrap().to_owned()   
+            },
+            Indicator::I3D(i) => {
+                std::str::from_utf8(&[i.0, i.1, i.2]).unwrap().to_owned()
+            },
+            Indicator::I0D(i) => {
+                std::str::from_utf8(&i.0).unwrap().to_owned()
+            }
+        }
+    }
+}

@@ -26,7 +26,7 @@ impl From<&str> for Contents {
     }
 }
 
-impl<'a> Contents {
+impl Contents {
     pub fn from_file(path: PathBuf) -> Result<Contents, String> {
         let mut contents = vec![];
         let file = OpenOptions::new().read(true).open(&path);
