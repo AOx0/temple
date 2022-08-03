@@ -1,4 +1,6 @@
 mod indicators;
+use std::fmt::Display;
+
 pub use indicators::KeyIndicator;
 use indicators::*;
 
@@ -57,20 +59,20 @@ impl KeyIndicator for Indicator {
     }
 }
 
-impl From<Indicator> for String {
-    fn from(thing: Indicator) -> String {
-        match thing {
+impl Display for Indicator {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
             Indicator::I1D(i) => {
-                std::str::from_utf8(&[i.0]).unwrap().to_owned()  
+                write!(f, "{}", std::str::from_utf8(&[i.0]).expect(&format!("Non UTF-8 Key {:?}", &[i.0])) )
             },
             Indicator::I2D(i) => {
-                std::str::from_utf8(&[i.0, i.1]).unwrap().to_owned()   
+                write!(f, "{}", std::str::from_utf8(&[i.0, i.1]).expect(&format!("Non UTF-8 Key {:?}", &[i.0, i.1])) )
             },
             Indicator::I3D(i) => {
-                std::str::from_utf8(&[i.0, i.1, i.2]).unwrap().to_owned()
+                write!(f, "{}", std::str::from_utf8(&[i.0, i.1, i.2]).expect(&format!("Non UTF-8 Key {:?}", &[i.0, i.1, i.2])) )
             },
             Indicator::I0D(i) => {
-                std::str::from_utf8(&i.0).unwrap().to_owned()
+                write!(f, "{}", std::str::from_utf8(&i.0).expect(&format!("Non UTF-8 Key {:?}", &i.0)) )
             }
         }
     }

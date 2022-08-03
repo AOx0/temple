@@ -22,20 +22,12 @@ pub fn render_recursive(
 ) -> Result<(), String> {
     if dir.is_dir() {
         let mut contents = if dip && !in_place {
-            let project_template =  format!("{}project{}", std::string::String::from(indicators.start.clone()),  std::string::String::from(indicators.end.clone()) );
-            // println!("{project_template}");
-            Contents::from(project_template.as_str())
+            Contents::from(&format!("{}project{}", indicators.start,  indicators.end))
         } else {
             Contents::from(dir.file_name().unwrap().to_str().unwrap())
         };
 
-        let dir_name = contents.replace(indicators, keys);
-
-        if let Err(e) = dir_name {
-            return Err(e);
-        }
-
-        let dir_name = Contents::get_str_from_result(&dir_name.unwrap().1);
+        let dir_name = Contents::get_str_from_result(&contents.replace(indicators, keys)?.1);
 
         if !overwrite
             && !in_place

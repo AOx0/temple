@@ -16,9 +16,9 @@ pub enum NewContents<'a> {
     New(Vec<u8>),
 }
 
-impl From<&str> for Contents {
-    fn from(s: &str) -> Self {
-        let contents = s.as_bytes().to_vec();
+impl<T> From<T> for Contents where T: AsRef<str> {
+    fn from(s: T) -> Self {
+        let contents = s.as_ref().as_bytes().to_vec();
         Contents {
             contents,
             origin: PathBuf::from("None. Contents from &str"),
@@ -75,10 +75,8 @@ impl Contents {
         keys: &Keys,
     ) -> Result<(usize, Vec<NewContents>), String> {
         let mut result: Vec<NewContents> = Vec::with_capacity(self.contents.len());
-        let mut i: usize = 0;
-        let mut sum: usize = 0;
+        let (mut i, mut sum, mut last_i) = (0usize, 0usize, 0usize);
         let mut word = Word::new();
-        let mut last_i: usize = 0;
 
         if !(indicators.find_in(&self.contents, i, true).is_some()
             && indicators.find_in(&self.contents, i, false).is_some())
@@ -86,11 +84,7 @@ impl Contents {
             return Ok((0, vec![NewContents::Old(&self.contents[..])]));
         }
 
-        loop {
-            if i >= self.contents.as_slice().len() {
-                break;
-            }
-
+        while i >= self.contents.as_slice().len() {
             if self.contents[i] == indicators.start_char() {
                 if let Some(mut start) = indicators.find_in(&self.contents, i, true) {
                     if let Some(end) = indicators.find_in(&self.contents, i, false) {

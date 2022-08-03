@@ -92,16 +92,11 @@ fn find_local_templates_folder(from: PathBuf, config_files: &ConfigFiles) -> Opt
 
     let mut current = from;
     loop {
-        if current.join(".temple").exists() && current.join(".temple").is_dir() {
-            return Some(current.join(".temple"));
-        } else {
-            let parent = current.parent();
-            if let Some(parent) = parent {
-                current = parent.into();
-            } else {
-                return None;
-            }
+        let c = current.join(".temple");
+        if c.is_dir() {
+            return Some(c);
         }
+        current = current.parent()?.into();
     }
 }
 
@@ -184,7 +179,7 @@ pub fn create_project_from_template(
     let template = templates.get_named(template_name, prefer_local);
 
     let template: &Path = if let Some(template) = template {
-        if template.path.is_dir() && template.path.join(".temple").exists() {
+        if template.path.join(".temple").is_file() {
             &template.path
         } else {
             return Err("Error: Template does not exist".into());
