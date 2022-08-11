@@ -84,7 +84,7 @@ impl Contents {
             return Ok((0, vec![NewContents::Old(&self.contents[..])]));
         }
 
-        while i >= self.contents.as_slice().len() {
+        while i < self.contents.as_slice().len() {
             if self.contents[i] == indicators.start_char() {
                 if let Some(mut start) = indicators.find_in(&self.contents, i, true) {
                     if let Some(end) = indicators.find_in(&self.contents, i, false) {
