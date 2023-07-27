@@ -1,6 +1,8 @@
 #![deny(clippy::all)]
 #![warn(clippy::pedantic)]
 #![deny(rust_2018_idioms, unsafe_code)]
+#![allow(clippy::missing_errors_doc)]
+#![allow(clippy::missing_panics_doc)]
 
 mod args;
 pub mod contents;
@@ -8,6 +10,7 @@ mod indicator;
 pub mod indicators;
 pub mod keys;
 
+use anyhow::{bail, ensure, Result};
 pub use args::Commands;
 pub use args::{Args, Parser};
 pub use contents::Contents;
@@ -31,6 +34,7 @@ pub struct ConfigFiles {
 }
 
 impl ConfigFiles {
+    #[must_use]
     pub fn get() -> Self {
         let user_dirs = directories::UserDirs::new().unwrap();
 
@@ -50,21 +54,22 @@ impl ConfigFiles {
         }
     }
 
-    pub fn exists(&self) -> Result<(), String> {
+    pub fn exists(&self) -> Result<()> {
         let home = directories::UserDirs::new().unwrap();
-        if !self.temple_home.exists() || !self.temple_home.exists() {
-            Err(format!(
+        ensure! {
+            self.temple_home.exists() && self.temple_home.exists(),
+            "{}",
+            format!(
                 "Error: No '{}' and '{}'.\n    Run `temple init` to create them",
                 self.temple_home.display(),
                 self.temple_config.display()
             )
-            .replace(home.home_dir().to_str().unwrap(), "~"))
-        } else {
-            Ok(())
-        }
+            .replace(home.home_dir().to_str().unwrap(), "~")
+        };
+        Ok(())
     }
 
-    pub fn init_temple_config_files(&self) -> Result<(), String> {
+    pub fn init_temple_config_files(&self) -> Result<()> {
         create_all(&self.temple_home, true).unwrap();
         let home = directories::UserDirs::new().unwrap();
         let mut conf = OpenOptions::new()
@@ -94,22 +99,20 @@ impl ConfigFiles {
         Ok(())
     }
 
-    fn get_available_templates(&self) -> Result<Templates, String> {
+    fn get_available_templates(&self) -> Result<Templates> {
         self.exists()?;
 
-        let contents_local = find_local_templates_folder(current_dir().unwrap(), self);
+        let contents_local = find_local_templates_folder(current_dir().unwrap().as_path(), self);
 
         let available_global = get_templates_in_path(&self.temple_home);
         let available_local = contents_local
             .and_then(|path| (path != self.temple_home).then(|| get_templates_in_path(&path)))
             .unwrap_or_default();
 
-        if available_global.is_empty() && available_local.is_empty() {
-            return Err(format!(
-                "No available templates. To add templates add them in {} for global templates or create a .temple/ directory for local templates.",
-                self.temple_home.display()
-            ));
-        }
+        ensure! { !available_global.is_empty() || !available_local.is_empty(),
+            "No available templates. To add templates add them in {} for global templates or create a .temple/ directory for local templates.",
+            self.temple_home.display()
+        };
 
         Ok(Templates {
             global: available_global,
@@ -117,12 +120,7 @@ impl ConfigFiles {
         })
     }
 
-    pub fn list_available_templates(
-        &self,
-        long: bool,
-        path: bool,
-        errors: bool,
-    ) -> Result<(), String> {
+    pub fn list_available_templates(&self, long: bool, path: bool, errors: bool) -> Result<()> {
         let templates = self.get_available_templates();
 
         let templates = match templates {
@@ -152,7 +150,7 @@ impl ConfigFiles {
                             .to_str()
                             .unwrap()
                             .replace(home.to_str().unwrap(), "~")
-                    )
+                    );
                 }
 
                 print!(
@@ -170,8 +168,7 @@ impl ConfigFiles {
                             spacer = if long { "\n" } else { " " }
                         )
                         .replace(home.to_str().unwrap(), "~"))
-                        .collect::<Vec<_>>()
-                        .join(""),
+                        .collect::<String>(),
                 );
                 (long || i != 0).then(|| println!());
             });
@@ -184,7 +181,7 @@ impl ConfigFiles {
 fn get_templates_in_path(path: &Path) -> Vec<Template> {
     path.read_dir()
         .unwrap()
-        .map(|c| c.unwrap())
+        .map(std::result::Result::unwrap)
         .filter_map(|c| {
             (c.file_type().unwrap().is_dir() && c.path().join(".temple").exists()).then(|| {
                 Template {
@@ -221,12 +218,12 @@ impl Templates {
     }
 }
 
-fn find_local_templates_folder(from: PathBuf, config_files: &ConfigFiles) -> Option<PathBuf> {
+fn find_local_templates_folder(from: &Path, config_files: &ConfigFiles) -> Option<PathBuf> {
     if config_files.temple_home == from {
         return None;
     }
 
-    let mut current = from.as_path();
+    let mut current = from;
     while let Some(parent) = current.parent() {
         let c = current.join(".temple");
         if c.is_dir() {
@@ -244,7 +241,7 @@ pub fn get_template_keys(
     template_name: &str,
     prefer_local: bool,
     config_files: ConfigFiles,
-) -> Result<(), String> {
+) -> Result<()> {
     config_files.exists()?;
     let templates = config_files.get_available_templates()?;
 
@@ -256,10 +253,10 @@ pub fn get_template_keys(
         if template.path.join(".temple").is_file() {
             &template.path
         } else {
-            return Err("Error: Template does not exist".into());
+            bail!("Error: Template does not exist");
         }
     } else {
-        return Err("Error: Template does not exist".into());
+        bail!("Error: Template does not exist");
     };
 
     let keys_project_config = Keys::from_file_contents(&template.join(".temple"));
@@ -272,7 +269,7 @@ pub fn get_template_keys(
         project_keys
             .list
             .iter()
-            .map(|(k, _)| k.to_owned())
+            .map(|(k, _)| k.clone())
             .collect::<Vec<String>>()
             .join(" ")
     );
@@ -283,12 +280,12 @@ pub fn get_template_keys(
 pub fn create_project_from_template(
     template_name: &str,
     project_name: &str,
-    cli_keys: Vec<std::string::String>,
+    cli_keys: &[String],
     config_files: ConfigFiles,
     prefer_local: bool,
     place_in_place: bool,
     overwrite: bool,
-) -> Result<(), String> {
+) -> Result<()> {
     config_files.exists()?;
 
     let templates = config_files.get_available_templates()?;
@@ -301,10 +298,10 @@ pub fn create_project_from_template(
         if template.path.join(".temple").is_file() {
             &template.path
         } else {
-            return Err("Error: Template does not exist".into());
+            bail!("Error: Template does not exist");
         }
     } else {
-        return Err("Error: Template does not exist".into());
+        bail!("Error: Template does not exist");
     };
 
     let keys_project_config = Keys::from_file_contents(&template.join(".temple"));
@@ -331,7 +328,7 @@ pub fn create_project_from_template(
     if place_in_place {
         renderer::render_recursive(
             template,
-            target.clone(),
+            &target.clone(),
             &project_keys,
             true,
             indicators,
@@ -340,15 +337,15 @@ pub fn create_project_from_template(
             place_in_place,
         )?;
     } else if target.exists() && !overwrite {
-        return Err(format!(
+        bail!(
             "Error: directory {} already exists",
             target.file_name().unwrap().to_str().unwrap()
-        ));
+        );
     }
 
     if let Err(e) = renderer::render_recursive(
         template,
-        target,
+        &target,
         &project_keys,
         true,
         indicators,
@@ -357,7 +354,7 @@ pub fn create_project_from_template(
         place_in_place,
     ) {
         fs_extra::dir::remove(current_dir().unwrap().join(project_name)).unwrap();
-        return Err(e);
+        bail!(e);
     }
 
     Ok(())

@@ -11,11 +11,11 @@ impl Keys {
         self.list.append(&mut other.list);
     }
 
-    pub fn get_match(&self, key: &str) -> Option<&str> {
+    #[must_use] pub fn get_match(&self, key: &str) -> Option<&str> {
         self.list.iter().find(|a| a.0 == key).map(|a| a.1.as_str())
     }
 
-    pub fn from_file_contents(path: &Path) -> Keys {
+    #[must_use] pub fn from_file_contents(path: &Path) -> Keys {
         let mut file = OpenOptions::new().read(true).open(path).unwrap();
         let mut file_contents: Vec<u8> = Vec::new();
         file.read_to_end(&mut file_contents).unwrap();

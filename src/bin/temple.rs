@@ -14,9 +14,9 @@ fn main() {
             in_place,
             overwrite,
         } => create_project_from_template(
-            &template_name.trim_start_matches("local:"),
+            template_name.trim_start_matches("local:"),
             &project_name,
-            cli_keys,
+            &cli_keys,
             temple_files,
             local || template_name.starts_with("local:"),
             in_place,
@@ -32,7 +32,7 @@ fn main() {
             template_name,
             local,
         } => get_template_keys(
-            &template_name.trim_start_matches("local:"),
+            template_name.trim_start_matches("local:"),
             local || template_name.starts_with("local:"),
             temple_files,
         ),

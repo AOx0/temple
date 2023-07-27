@@ -1,22 +1,22 @@
 use std::{
     fs::{self, create_dir_all, OpenOptions},
-    path::{Path, PathBuf},
+    path::Path,
     str::FromStr,
 };
 
-use super::*;
+use super::{bail, Contents, Indicators, Keys, Result};
 
 #[allow(clippy::too_many_arguments)]
 pub fn render_recursive(
     target_dir: &Path,
-    target: PathBuf,
+    target: &Path,
     keys: &Keys,
     first_level: bool,
     indicators: Indicators<'_>,
     dry_run: bool,
     overwrite: bool,
     in_place: bool,
-) -> Result<(), String> {
+) -> Result<()> {
     if target_dir.is_dir() {
         let mut contents = if first_level && !in_place {
             Contents::from_str(&format!("{}project{}", indicators.start, indicators.end))
@@ -27,14 +27,14 @@ pub fn render_recursive(
 
         let mut buff = String::new();
 
-        contents.replace(indicators, keys)?.extend_str(&mut buff);
+        contents.replace(indicators, keys)?.extend_str(&mut buff)?;
 
         if !overwrite
             && !in_place
             && first_level
             && target.parent().unwrap().join(buff.as_str()).exists()
         {
-            return Err(format!(
+            bail!(
                 "Error: directory {} already exists",
                 target
                     .parent()
@@ -44,16 +44,16 @@ pub fn render_recursive(
                     .unwrap()
                     .to_str()
                     .unwrap()
-            ));
+            );
         }
 
         if !dry_run {
-            create_dir_all(if !first_level {
-                target.parent().unwrap().join(buff.as_str())
+            create_dir_all(if first_level {
+                target.clone().to_path_buf()
             } else {
-                target.clone()
+                target.parent().unwrap().join(buff.as_str())
             })
-            .unwrap()
+            .unwrap();
         }
 
         for entry in fs::read_dir(target_dir).unwrap() {
@@ -63,12 +63,12 @@ pub fn render_recursive(
             if path.is_dir() {
                 let mut contents =
                     Contents::from_str(path.file_name().unwrap().to_str().unwrap()).unwrap();
-                contents.replace(indicators, keys)?.extend_str(&mut buff);
+                contents.replace(indicators, keys)?.extend_str(&mut buff)?;
 
                 if !dry_run {
                     render_recursive(
                         &path,
-                        target.join(buff.as_str()),
+                        &target.join(buff.as_str()),
                         keys,
                         false,
                         indicators,
@@ -87,18 +87,18 @@ pub fn render_recursive(
                     continue;
                 }
 
-                let indicators = indicators.to_owned();
-                let keys = keys.to_owned();
-                let target = target.to_owned();
+                let indicators = indicators;
+                let keys = keys.clone();
+                let target = target.clone();
 
                 let mut contents =
                     Contents::from_str(path.file_name().unwrap().to_str().unwrap()).unwrap();
-                contents.replace(indicators, &keys)?.extend_str(&mut buff);
+                contents.replace(indicators, &keys)?.extend_str(&mut buff)?;
 
                 // println!("Replacing in {} file name {} to {}", target.display(), path.file_name().unwrap().to_str().unwrap(), replacement );
 
                 if !overwrite && first_level && target.clone().join(buff.as_str()).exists() {
-                    return Err(format!(
+                    bail!(
                         "Error: file {} already exists",
                         target
                             .clone()
@@ -107,7 +107,7 @@ pub fn render_recursive(
                             .unwrap()
                             .to_str()
                             .unwrap()
-                    ));
+                    );
                 }
 
                 if !dry_run {
@@ -125,7 +125,7 @@ pub fn render_recursive(
                             .as_path(),
                     )?;
 
-                    contents.replace(indicators, &keys)?.write_to_file(new);
+                    contents.replace(indicators, &keys)?.write_to_file(new)?;
 
                     //println!("Replacing contents of \"{}\".", path.parent().unwrap().join(path.file_name().unwrap()).display());
                 }

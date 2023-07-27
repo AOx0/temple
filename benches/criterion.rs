@@ -1,6 +1,6 @@
 use std::str::FromStr;
 
-use criterion::{black_box, criterion_group, criterion_main, Criterion};
+use criterion::{criterion_group, criterion_main, Criterion};
 use temple::*;
 
 pub fn replace_and_write(c: &mut Criterion) {
