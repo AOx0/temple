@@ -264,15 +264,7 @@ pub fn get_template_keys(
     project_keys.add(keys_project_config);
     project_keys.add(Keys::from_file_contents(&config));
 
-    println!(
-        "{}",
-        project_keys
-            .list
-            .iter()
-            .map(|(k, _)| k.clone())
-            .collect::<Vec<String>>()
-            .join(" ")
-    );
+    println!("{}", project_keys.keys.join(" "));
 
     Ok(())
 }
