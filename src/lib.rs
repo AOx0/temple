@@ -1,5 +1,22 @@
+mod args;
+pub mod contents;
+mod indicator;
+pub mod indicators;
+pub mod keys;
+mod shared;
+mod word;
+
+pub use args::Commands;
+pub use args::{Args, Parser};
 pub use config_files::ConfigFiles;
+pub use config_files::*;
+pub use contents::Contents;
+pub use contents::*;
 use fs_extra::dir::create_all;
+pub use indicators::Indicators;
+pub use keys::Keys;
+pub use shared::*;
+pub use smartstring::alias::String;
 use std::{
     cell::RefCell,
     env::current_dir,
@@ -8,8 +25,6 @@ use std::{
     path::{Path, PathBuf},
     rc::Rc,
 };
-use temple_core::String;
-use temple_core::*;
 
 mod config_files;
 mod renderer;
@@ -130,31 +145,87 @@ or ./.temple for local templates."
     })
 }
 
-pub fn list_available_templates(config_files: ConfigFiles) -> Result<(), String> {
+pub fn list_available_templates(
+    config_files: ConfigFiles,
+    long: bool,
+    path: bool,
+) -> Result<(), String> {
     let templates = get_available_templates(&config_files)?;
 
+    let home = directories::UserDirs::new().unwrap();
+    let home = home.home_dir();
+
     if !templates.global.is_empty() {
-        println!("Available global templates (~/.temple): ");
-        templates
-            .global
-            .iter()
-            .for_each(|a| println!("   * {}", a.name));
+        if long {
+            println!("Available global templates (~/.temple): ");
+            templates.global.iter().for_each(|a| {
+                let a = format!(
+                    "   * {}{}",
+                    a.name,
+                    path.then_some(format!("\t'{}'", a.path.to_str().unwrap()).into())
+                        .unwrap_or(String::new())
+                )
+                .replace(home.to_str().unwrap(), "~");
+                println!("{}", a)
+            });
+        } else {
+            println!(
+                "{}",
+                templates
+                    .global
+                    .iter()
+                    .map(|a| format!(
+                        "{}{}",
+                        a.name,
+                        path.then_some(format!("\t'{}'", a.path.to_str().unwrap()).into())
+                            .unwrap_or(String::new())
+                    )
+                    .replace(home.to_str().unwrap(), "~"))
+                    .collect::<Vec<_>>()
+                    .join(" ")
+            );
+        }
     }
 
     if !templates.local.is_empty() {
-        println!(
-            "Available local templates ({}/.temple): ",
-            current_dir()
-                .unwrap()
-                .file_name()
-                .unwrap()
-                .to_str()
-                .unwrap()
-        );
-        templates
-            .local
-            .iter()
-            .for_each(|a| println!("   * {}", a.name));
+        if long {
+            println!(
+                "Available local templates ({}/.temple): ",
+                current_dir()
+                    .unwrap()
+                    .file_name()
+                    .unwrap()
+                    .to_str()
+                    .unwrap()
+                    .replace(home.to_str().unwrap(), "~")
+            );
+            templates.local.iter().for_each(|a| {
+                let a = format!(
+                    "   * {}{}",
+                    a.name,
+                    path.then_some(format!("\t'{}'", a.path.to_str().unwrap()).into())
+                        .unwrap_or(String::new())
+                )
+                .replace(home.to_str().unwrap(), "~");
+                println!("{}", a)
+            });
+        } else {
+            println!(
+                "{}",
+                templates
+                    .local
+                    .iter()
+                    .map(|a| format!(
+                        "{}{}",
+                        a.name,
+                        path.then_some(format!("\t'{}'", a.path.to_str().unwrap()).into())
+                            .unwrap_or(String::new())
+                    )
+                    .replace(home.to_str().unwrap(), "~"))
+                    .collect::<Vec<_>>()
+                    .join(" ")
+            );
+        }
     }
 
     Ok(())
@@ -262,4 +333,50 @@ pub fn create_project_from_template(
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+
+    use crate::*;
+
+    #[test]
+    fn basic_parse() {
+        let mut contents = Contents::from("lmao {{ jaja }}");
+        let indicators = Indicators::new("{{ ", " }}").unwrap();
+        let keys = Keys::from("jaja=perro");
+        let replace = contents.replace(&indicators, &keys);
+
+        let r = if let Ok(res) = replace {
+            match res.0 {
+                666 => String::from("No changes. No keys"),
+                _ => Contents::get_str_from_result(&res.1),
+            }
+        } else {
+            String::from("Invalid chars or data")
+        };
+
+        println!("{r}");
+        assert_eq!(r, "lmao perro");
+    }
+
+    #[test]
+    fn custom_key_parse() {
+        let mut contents = Contents::from("lmao [[[jaja]]]");
+        let indicators = Indicators::new("[[[", "]]]").unwrap();
+        let keys = Keys::from("jaja=perro");
+        let replace = contents.replace(&indicators, &keys);
+
+        let r = if let Ok(res) = replace {
+            match res.0 {
+                666 => String::from("No changes. No keys"),
+                _ => Contents::get_str_from_result(&res.1),
+            }
+        } else {
+            String::from("Invalid chars or data")
+        };
+
+        println!("{r}");
+        assert_eq!(r, "lmao perro");
+    }
 }

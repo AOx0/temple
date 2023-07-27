@@ -6,7 +6,7 @@ use std::{
     thread::{self, JoinHandle},
 };
 
-use temple_core::*;
+use super::*;
 
 pub type Mu<T> = Rc<RefCell<T>>;
 pub fn render_recursive(
@@ -22,7 +22,7 @@ pub fn render_recursive(
 ) -> Result<(), String> {
     if dir.is_dir() {
         let mut contents = if dip && !in_place {
-            Contents::from(&format!("{}project{}", indicators.start,  indicators.end))
+            Contents::from(&format!("{}project{}", indicators.start, indicators.end))
         } else {
             Contents::from(dir.file_name().unwrap().to_str().unwrap())
         };
@@ -104,18 +104,15 @@ pub fn render_recursive(
                             let mut contents =
                                 Contents::from(path.file_name().unwrap().to_str().unwrap());
                             let replacement = contents.replace(&indicators, &keys);
-                            
-                            
+
                             if let Err(e) = replacement {
                                 return Err(e);
                             }
-
 
                             let replacement =
                                 Contents::get_str_from_result(&replacement.unwrap().1);
 
                             // println!("Replacing in {} file name {} to {}", target.display(), path.file_name().unwrap().to_str().unwrap(), replacement );
-
 
                             if !overwrite
                                 && dip
@@ -146,9 +143,7 @@ pub fn render_recursive(
                                     path.parent().unwrap().join(path.file_name().unwrap()),
                                 )?;
 
-                                let replacement = contents
-                                    .replace(&indicators, &keys);
-
+                                let replacement = contents.replace(&indicators, &keys);
 
                                 let result = match replacement {
                                     Ok(o) => o,

@@ -1,10 +1,3 @@
-[workspace]
-members = [
-    "temple_core",
-    "temple_bench",
-    "temple_shared",
-]
-
 [package]
 name="temple"
 version = "0.4.0"
@@ -12,42 +5,16 @@ edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
-[[bin]]
-name="temple"
-path="src/temple.rs"
-
-[[bin]]
-name="tem"
-path="src/temple.rs"
-
-[[bin]]
-name="t"
-path="src/temple.rs"
-
-[[bin]]
-name="temnew"
-path="src/temple_new.rs"
-
-[[bin]]
-name="tnew"
-path="src/temple_new.rs"
-
-[[bin]]
-name="temlist"
-path="src/temple_list.rs"
-
-[[bin]]
-name="tlist"
-path="src/temple_list.rs"
-
-[[bin]]
-name="teminit"
-path="src/temple_init.rs"
-
-[[bin]]
-name="tinit"
-path="src/temple_init.rs"
-
 [dependencies]
-clap = { version = "3.2.5", default_features = false, features = ["derive", "std"] }
-temple_shared = { path = "temple_shared" }
+clap = { version = "4.3.19", features = ["derive"] }
+fs_extra = "1.2.0"
+directories = "4.0.1"
+smartstring = "1.0.1"
+
+[dev-dependencies]
+iai = "0.1.1"
+criterion = "0.3.5"
+
+[[bench]]
+name = "criterion"
+harness = false

@@ -1,5 +1,5 @@
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
-use temple_core::*;
+use temple::*;
 
 pub fn replace_and_write(c: &mut Criterion) {
     c.bench_function("String conversion to keys and write of single file", |b| {
