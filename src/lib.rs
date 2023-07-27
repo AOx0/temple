@@ -8,7 +8,6 @@ mod word;
 
 pub use args::Commands;
 pub use args::{Args, Parser};
-pub use config_files::ConfigFiles;
 pub use config_files::*;
 pub use contents::Contents;
 pub use contents::*;
@@ -17,6 +16,7 @@ pub use indicators::Indicators;
 pub use keys::Keys;
 pub use shared::*;
 pub use smartstring::alias::String;
+use std::env;
 use std::{
     cell::RefCell,
     env::current_dir,
@@ -29,43 +29,162 @@ use std::{
 mod config_files;
 mod renderer;
 
-pub fn init_temple_config_files(config_files: ConfigFiles) -> Result<(), String> {
-    create_all(&config_files.temple_home, true).unwrap();
-    let mut conf = OpenOptions::new()
-        .create(true)
-        .truncate(true)
-        .write(true)
-        .open(config_files.temple_config)
-        .unwrap();
-
-    let default_config = "\
-            name=Your name,\n\
-            github=your_github_user,\n"
-        .as_bytes();
-
-    conf.write_all(default_config).unwrap();
-
-    println!("Created ~/.temple_conf file and ~/.temple dir");
-
-    Ok(())
+pub struct ConfigFiles {
+    pub temple_home: PathBuf,
+    pub temple_config: PathBuf,
 }
 
-fn get_templates_in_path(path: &Path) -> Vec<Template> {
-    let contents = path.read_dir().unwrap();
-    let mut available = vec![];
+impl ConfigFiles {
+    pub fn get() -> Self {
+        let user_dirs = directories::UserDirs::new().unwrap();
 
-    for c in contents {
-        let c = c.unwrap();
+        let (is_home, base_path) = if let Ok(config_dir) = env::var("XDG_CONFIG_DIRS") {
+            (false, config_dir.into())
+        } else if user_dirs.home_dir().join(".config").exists() {
+            (false, user_dirs.home_dir().join(".config"))
+        } else {
+            (true, user_dirs.home_dir().to_owned())
+        };
 
-        if c.file_type().unwrap().is_dir() && c.path().join(".temple").exists() {
-            available.push(Template {
-                path: c.path(),
-                name: c.file_name().as_os_str().to_str().unwrap().into(),
-            })
+        let temple_home = base_path.join(if is_home { ".temple" } else { "temple" });
+        let temple_config = temple_home.join("temple.conf");
+        ConfigFiles {
+            temple_home,
+            temple_config,
         }
     }
 
-    available
+    pub fn exists(&self) -> Result<(), String> {
+        let home = directories::UserDirs::new().unwrap();
+        if !self.temple_home.exists() || !self.temple_home.exists() {
+            Err(format!(
+                "Error: No '{}' and '{}'.\n    Run `temple init` to create them",
+                self.temple_home.display(),
+                self.temple_config.display()
+            )
+            .replace(home.home_dir().to_str().unwrap(), "~")
+            .into())
+        } else {
+            Ok(())
+        }
+    }
+
+    pub fn init_temple_config_files(&self) -> Result<(), String> {
+        create_all(&self.temple_home, true).unwrap();
+        let home = directories::UserDirs::new().unwrap();
+        let mut conf = OpenOptions::new()
+            .create(true)
+            .truncate(true)
+            .write(true)
+            .open(&self.temple_config)
+            .unwrap();
+
+        let default_config = "\
+                name=Your name,\n\
+                github=your_github_user,\n"
+            .as_bytes();
+
+        conf.write_all(default_config).unwrap();
+
+        println!(
+            "{}",
+            format!(
+                "Created temple config files:\n    '{}'\n    '{}'",
+                self.temple_home.display(),
+                self.temple_config.display()
+            )
+            .replace(home.home_dir().to_str().unwrap(), "~")
+        );
+
+        Ok(())
+    }
+
+    fn get_available_templates(&self) -> Result<Templates, String> {
+        self.exists()?;
+
+        let contents_local = find_local_templates_folder(current_dir().unwrap(), self);
+
+        let available_global = get_templates_in_path(&self.temple_home);
+        let available_local = contents_local
+            .and_then(|path| (path != self.temple_home).then(|| get_templates_in_path(&path)))
+            .unwrap_or_default();
+
+        if available_global.is_empty() && available_local.is_empty() {
+            return Err(format!(
+                "No available templates. To add templates add them in {} for global templates or create a .temple/ directory for local templates.",
+                self.temple_home.display()
+            )
+            .into());
+        }
+
+        Ok(Templates {
+            global: available_global,
+            local: available_local,
+        })
+    }
+
+    pub fn list_available_templates(&self, long: bool, path: bool) -> Result<(), String> {
+        let templates = self.get_available_templates()?;
+
+        let home = directories::UserDirs::new().unwrap();
+        let home = home.home_dir();
+
+        let iter = [templates.global, templates.local];
+
+        for (i, iter) in iter.iter().enumerate() {
+            (iter.len() != 0).then(|| {
+                long.then(|| {
+                    println!(
+                        "Available {} templates (def at '{}'): ",
+                        (i == 0).then_some("global").unwrap_or("local"),
+                        (i == 0)
+                            .then(|| { self.temple_home.as_path() })
+                            .unwrap_or_else(|| { iter.first().unwrap().path.parent().unwrap() })
+                            .to_str()
+                            .unwrap()
+                            .replace(home.to_str().unwrap(), "~")
+                    );
+                });
+
+                print!(
+                    "{}",
+                    iter.iter()
+                        .map(|a| format!(
+                            "{dotchr}{tename}{tepath}{spacer}",
+                            dotchr = long.then_some("    ").unwrap_or(""),
+                            tename = (long || (!long && i == 0))
+                                .then(|| a.name.clone())
+                                .unwrap_or_else(|| format!("local:{}", a.name).into()),
+                            tepath = path
+                                .then_some(format!("\t'{}'", a.path.to_str().unwrap()).into())
+                                .unwrap_or(String::new()),
+                            spacer = long.then_some("\n").unwrap_or(" ")
+                        )
+                        .replace(home.to_str().unwrap(), "~"))
+                        .collect::<Vec<_>>()
+                        .join(""),
+                );
+                (long || (!long && i != 0)).then(|| println!());
+            });
+        }
+
+        Ok(())
+    }
+}
+
+fn get_templates_in_path(path: &Path) -> Vec<Template> {
+    path.read_dir()
+        .unwrap()
+        .map(|c| c.unwrap())
+        .filter_map(|c| {
+            (c.file_type().unwrap().is_dir() && c.path().join(".temple").exists()).then(|| {
+                Template {
+                    path: c.path(),
+                    name: c.file_name().as_os_str().to_str().unwrap().into(),
+                }
+            })
+        })
+        .collect::<Vec<_>>()
 }
 
 #[derive(Clone)]
@@ -84,18 +203,11 @@ impl Templates {
         let local = self.local.iter().find(|&t| t.name == name);
         let global = self.global.iter().find(|&t| t.name == name);
 
-        if local.is_some() && global.is_some() {
-            if prefer_local {
-                local
-            } else {
-                global
-            }
-        } else if global.is_some() {
-            global
-        } else if local.is_some() {
-            local
-        } else {
-            None
+        match (local, global) {
+            (Some(local), Some(global)) => Some(prefer_local.then(|| local).unwrap_or(global)),
+            (None, Some(global)) => Some(global),
+            (Some(local), None) => Some(local),
+            _ => None,
         }
     }
 }
@@ -105,130 +217,18 @@ fn find_local_templates_folder(from: PathBuf, config_files: &ConfigFiles) -> Opt
         return None;
     }
 
-    let mut current = from;
-    loop {
+    let mut current = from.as_path();
+    while let Some(parent) = current.parent() {
         let c = current.join(".temple");
         if c.is_dir() {
             return Some(c);
+        } else if c.is_file() {
+            println!("Warning: Found {} which is not a directory", c.display());
         }
-        current = current.parent()?.into();
-    }
-}
-
-fn get_available_templates(config_files: &ConfigFiles) -> Result<Templates, String> {
-    config_files.exists()?;
-
-    let contents_local = find_local_templates_folder(current_dir().unwrap(), config_files);
-
-    let available = get_templates_in_path(&config_files.temple_home);
-    let available_local = if let Some(path) = contents_local {
-        if path != config_files.temple_home {
-            get_templates_in_path(&path)
-        } else {
-            vec![]
-        }
-    } else {
-        vec![]
-    };
-
-    if available.is_empty() && available_local.is_empty() {
-        return Err(
-            "No available templates. To add templates add them in ~/.temple for global templates \
-or ./.temple for local templates."
-                .into(),
-        );
+        current = parent;
     }
 
-    Ok(Templates {
-        global: available,
-        local: available_local,
-    })
-}
-
-pub fn list_available_templates(
-    config_files: ConfigFiles,
-    long: bool,
-    path: bool,
-) -> Result<(), String> {
-    let templates = get_available_templates(&config_files)?;
-
-    let home = directories::UserDirs::new().unwrap();
-    let home = home.home_dir();
-
-    if !templates.global.is_empty() {
-        if long {
-            println!("Available global templates (~/.temple): ");
-            templates.global.iter().for_each(|a| {
-                let a = format!(
-                    "   * {}{}",
-                    a.name,
-                    path.then_some(format!("\t'{}'", a.path.to_str().unwrap()).into())
-                        .unwrap_or(String::new())
-                )
-                .replace(home.to_str().unwrap(), "~");
-                println!("{}", a)
-            });
-        } else {
-            println!(
-                "{}",
-                templates
-                    .global
-                    .iter()
-                    .map(|a| format!(
-                        "{}{}",
-                        a.name,
-                        path.then_some(format!("\t'{}'", a.path.to_str().unwrap()).into())
-                            .unwrap_or(String::new())
-                    )
-                    .replace(home.to_str().unwrap(), "~"))
-                    .collect::<Vec<_>>()
-                    .join(" ")
-            );
-        }
-    }
-
-    if !templates.local.is_empty() {
-        if long {
-            println!(
-                "Available local templates ({}/.temple): ",
-                current_dir()
-                    .unwrap()
-                    .file_name()
-                    .unwrap()
-                    .to_str()
-                    .unwrap()
-                    .replace(home.to_str().unwrap(), "~")
-            );
-            templates.local.iter().for_each(|a| {
-                let a = format!(
-                    "   * {}{}",
-                    a.name,
-                    path.then_some(format!("\t'{}'", a.path.to_str().unwrap()).into())
-                        .unwrap_or(String::new())
-                )
-                .replace(home.to_str().unwrap(), "~");
-                println!("{}", a)
-            });
-        } else {
-            println!(
-                "{}",
-                templates
-                    .local
-                    .iter()
-                    .map(|a| format!(
-                        "{}{}",
-                        a.name,
-                        path.then_some(format!("\t'{}'", a.path.to_str().unwrap()).into())
-                            .unwrap_or(String::new())
-                    )
-                    .replace(home.to_str().unwrap(), "~"))
-                    .collect::<Vec<_>>()
-                    .join(" ")
-            );
-        }
-    }
-
-    Ok(())
+    None
 }
 
 pub fn create_project_from_template(
@@ -242,7 +242,7 @@ pub fn create_project_from_template(
 ) -> Result<(), String> {
     config_files.exists()?;
 
-    let templates = get_available_templates(&config_files)?;
+    let templates = (&config_files).get_available_templates()?;
 
     let config = config_files.temple_config;
     let handles = Rc::new(RefCell::new(vec![]));

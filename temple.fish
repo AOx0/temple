@@ -19,7 +19,7 @@ function __fish_temple_complete_templates
     set -l contains (__fish_temple_contains_temple_new)
 
     if [ "$contains" = "n" ]
-        temple list --short --path 2> /dev/null | tr " " "\n" || echo ""
+        temple list -sp 2> /dev/null | tr " " "\n" || echo ""
     end
 end
 
@@ -38,10 +38,11 @@ function __fish_temple_c_complete
 
     # save our PWD
     set saved_pwd $PWD
+    set projects $PWD
 
     # cd to $PROJECTS (and then back after)
     # while in $PROJECTS, complete as if we are 'cd'
-    builtin cd $PROJECTS
+    builtin cd $projects
     and complete -C"cd $arg"
     builtin cd $saved_pwd
 end
@@ -66,7 +67,7 @@ complete -c temple -n "__fish_seen_subcommand_from list" -s s -l short -d 'Show 
 complete -c temple -n "__fish_seen_subcommand_from list" -s p -l path -d 'Show templates path'
 
 # new
-complete -c temple -n "__fish_seen_subcommand_from new; and not __fish_seen_subcommand_from help" -a '(__fish_temple_complete_templates)'
+complete -c temple -n "__fish_seen_subcommand_from new; and not __fish_seen_subcommand_from help" -ka '(__fish_temple_complete_templates)'
 complete -c temple -n "__fish_seen_subcommand_from new" -s l -l local -d 'Prefer local (./.temple/template_name) if available [default: prefer ~/.temple/template_name]'
 complete -c temple -n "__fish_seen_subcommand_from new" -s i -l in_place -d 'Place contents in_place (./.) instead of creating a folder'
 complete -c temple -n "__fish_seen_subcommand_from new" -s o -l overwrite -d 'Overwrite any already existing files'
