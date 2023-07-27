@@ -1,9 +1,9 @@
 set -l commands list new init help
-set -l templates (temple list --short 2> /dev/null | tr " " "\n" || echo "")
+set -l templates (temple list -se 2> /dev/null | tr " " "\n" || echo "")
 
 function __fish_temple_contains_temple_new
     set -l cmd_args (commandline -opc)
-    set -l list_arr (temple list --short 2> /dev/null | tr " " "\n" || echo "")
+    set -l list_arr (temple list -se 2> /dev/null | tr " " "\n" || echo "")
     set -l contains "n"
 
     for arg in $cmd_args
@@ -19,7 +19,7 @@ function __fish_temple_complete_templates
     set -l contains (__fish_temple_contains_temple_new)
 
     if [ "$contains" = "n" ]
-        temple list -sp 2> /dev/null | tr " " "\n" || echo ""
+        temple list -spe 2> /dev/null | tr " " "\n" || echo ""
     end
 end
 

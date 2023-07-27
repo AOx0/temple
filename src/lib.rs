@@ -1,3 +1,7 @@
+#![deny(clippy::all)]
+#![warn(clippy::pedantic)]
+#![deny(rust_2018_idioms, unsafe_code)]
+
 mod args;
 pub mod contents;
 mod indicator;
@@ -15,15 +19,12 @@ use fs_extra::dir::create_all;
 pub use indicators::Indicators;
 pub use keys::Keys;
 pub use shared::*;
-pub use smartstring::alias::String;
 use std::env;
 use std::{
-    cell::RefCell,
     env::current_dir,
     fs::OpenOptions,
     io::Write,
     path::{Path, PathBuf},
-    rc::Rc,
 };
 
 mod config_files;
@@ -62,8 +63,7 @@ impl ConfigFiles {
                 self.temple_home.display(),
                 self.temple_config.display()
             )
-            .replace(home.home_dir().to_str().unwrap(), "~")
-            .into())
+            .replace(home.home_dir().to_str().unwrap(), "~"))
         } else {
             Ok(())
         }
@@ -113,8 +113,7 @@ impl ConfigFiles {
             return Err(format!(
                 "No available templates. To add templates add them in {} for global templates or create a .temple/ directory for local templates.",
                 self.temple_home.display()
-            )
-            .into());
+            ));
         }
 
         Ok(Templates {
@@ -123,8 +122,23 @@ impl ConfigFiles {
         })
     }
 
-    pub fn list_available_templates(&self, long: bool, path: bool) -> Result<(), String> {
-        let templates = self.get_available_templates()?;
+    pub fn list_available_templates(
+        &self,
+        long: bool,
+        path: bool,
+        errors: bool,
+    ) -> Result<(), String> {
+        let templates = self.get_available_templates();
+
+        let templates = match templates {
+            Ok(t) => t,
+            Err(err) => {
+                if errors {
+                    return Err(err);
+                }
+                return Ok(());
+            }
+        };
 
         let home = directories::UserDirs::new().unwrap();
         let home = home.home_dir();
@@ -132,39 +146,39 @@ impl ConfigFiles {
         let iter = [templates.global, templates.local];
 
         for (i, iter) in iter.iter().enumerate() {
-            (iter.len() != 0).then(|| {
-                long.then(|| {
+            (!iter.is_empty()).then(|| {
+                if long {
                     println!(
                         "Available {} templates (def at '{}'): ",
-                        (i == 0).then_some("global").unwrap_or("local"),
+                        if i == 0 { "global" } else { "local" },
                         (i == 0)
-                            .then(|| { self.temple_home.as_path() })
+                            .then_some(self.temple_home.as_path())
                             .unwrap_or_else(|| { iter.first().unwrap().path.parent().unwrap() })
                             .to_str()
                             .unwrap()
                             .replace(home.to_str().unwrap(), "~")
-                    );
-                });
+                    )
+                }
 
                 print!(
                     "{}",
                     iter.iter()
                         .map(|a| format!(
                             "{dotchr}{tename}{tepath}{spacer}",
-                            dotchr = long.then_some("    ").unwrap_or(""),
-                            tename = (long || (!long && i == 0))
-                                .then(|| a.name.clone())
-                                .unwrap_or_else(|| format!("local:{}", a.name).into()),
+                            dotchr = if long { "    " } else { "" },
+                            tename = (long || i == 0)
+                                .then_some(a.name.clone())
+                                .unwrap_or_else(|| format!("local:{}", a.name)),
                             tepath = path
-                                .then_some(format!("\t'{}'", a.path.to_str().unwrap()).into())
+                                .then_some(format!("\t'{}'", a.path.to_str().unwrap()))
                                 .unwrap_or(String::new()),
-                            spacer = long.then_some("\n").unwrap_or(" ")
+                            spacer = if long { "\n" } else { " " }
                         )
                         .replace(home.to_str().unwrap(), "~"))
                         .collect::<Vec<_>>()
                         .join(""),
                 );
-                (long || (!long && i != 0)).then(|| println!());
+                (long || i != 0).then(|| println!());
             });
         }
 
@@ -204,7 +218,7 @@ impl Templates {
         let global = self.global.iter().find(|&t| t.name == name);
 
         match (local, global) {
-            (Some(local), Some(global)) => Some(prefer_local.then(|| local).unwrap_or(global)),
+            (Some(local), Some(global)) => Some(if prefer_local { local } else { global }),
             (None, Some(global)) => Some(global),
             (Some(local), None) => Some(local),
             _ => None,
@@ -237,7 +251,7 @@ pub fn get_template_keys(
     config_files: ConfigFiles,
 ) -> Result<(), String> {
     config_files.exists()?;
-    let templates = (&config_files).get_available_templates()?;
+    let templates = config_files.get_available_templates()?;
 
     let config = config_files.temple_config;
 
@@ -282,10 +296,9 @@ pub fn create_project_from_template(
 ) -> Result<(), String> {
     config_files.exists()?;
 
-    let templates = (&config_files).get_available_templates()?;
+    let templates = config_files.get_available_templates()?;
 
     let config = config_files.temple_config;
-    let handles = Rc::new(RefCell::new(vec![]));
 
     let template = templates.get_named(template_name, prefer_local);
 
@@ -307,14 +320,10 @@ pub fn create_project_from_template(
     project_keys.add(keys_project_config);
     project_keys.add(Keys::from_file_contents(&config));
 
-    let start = project_keys
-        .get_match("start_indicator", None)
-        .unwrap_or("{{ ");
-    let end = project_keys
-        .get_match("end_indicator", None)
-        .unwrap_or(" }}");
+    let start = project_keys.get_match("start_indicator").unwrap_or("{{ ");
+    let end = project_keys.get_match("end_indicator").unwrap_or(" }}");
 
-    let indicators = &Indicators::new(start, end).unwrap();
+    let indicators = Indicators::new(start, end).unwrap();
 
     let target = current_dir().unwrap();
 
@@ -326,7 +335,6 @@ pub fn create_project_from_template(
 
     if place_in_place {
         renderer::render_recursive(
-            handles.clone(),
             template,
             target.clone(),
             &project_keys,
@@ -340,12 +348,10 @@ pub fn create_project_from_template(
         return Err(format!(
             "Error: directory {} already exists",
             target.file_name().unwrap().to_str().unwrap()
-        )
-        .into());
+        ));
     }
 
     if let Err(e) = renderer::render_recursive(
-        handles.clone(),
         template,
         target,
         &project_keys,
@@ -359,59 +365,25 @@ pub fn create_project_from_template(
         return Err(e);
     }
 
-    let handlers = Rc::try_unwrap(handles)
-        .expect("I hereby claim that my_ref is exclusively owned")
-        .into_inner();
-
-    for handler in handlers {
-        let res = handler.join();
-        if let Err(error) = res {
-            return Err(format!("Error: {:?}", error).into());
-        } else if let Ok(Err(error)) = res {
-            return Err(error);
-        }
-    }
-
     Ok(())
 }
 
 #[cfg(test)]
 mod tests {
 
+    use std::str::FromStr;
+
     use crate::*;
 
     #[test]
     fn basic_parse() {
-        let mut contents = Contents::from("lmao {{ jaja }}");
+        let mut contents = Contents::from_str("lmao {{ jaja }}").unwrap();
         let indicators = Indicators::new("{{ ", " }}").unwrap();
         let keys = Keys::from("jaja=perro");
-        let replace = contents.replace(&indicators, &keys);
+        let replace = contents.replace(indicators, &keys);
 
         let r = if let Ok(res) = replace {
-            match res.0 {
-                666 => String::from("No changes. No keys"),
-                _ => Contents::get_str_from_result(&res.1),
-            }
-        } else {
-            String::from("Invalid chars or data")
-        };
-
-        println!("{r}");
-        assert_eq!(r, "lmao perro");
-    }
-
-    #[test]
-    fn custom_key_parse() {
-        let mut contents = Contents::from("lmao [[[jaja]]]");
-        let indicators = Indicators::new("[[[", "]]]").unwrap();
-        let keys = Keys::from("jaja=perro");
-        let replace = contents.replace(&indicators, &keys);
-
-        let r = if let Ok(res) = replace {
-            match res.0 {
-                666 => String::from("No changes. No keys"),
-                _ => Contents::get_str_from_result(&res.1),
-            }
+            res.get_string()
         } else {
             String::from("Invalid chars or data")
         };

@@ -1,4 +1,3 @@
-use smartstring::alias::String;
 use std::{fs::OpenOptions, io::Read, path::Path, str::FromStr};
 
 #[derive(Clone, Debug)]
@@ -12,27 +11,8 @@ impl Keys {
         self.list.append(&mut other.list);
     }
 
-    pub fn get_match(&self, key: &str, file: Option<&Path>) -> Result<&str, String> {
-        for i in 0..self.list.len() {
-            if self.list[i].0 == key {
-                return Ok(&self.list[i].1);
-            }
-        }
-
-        if file.is_none() {
-            Err(String::from("Key not found"))
-        } else {
-            Err(format!(
-                "No value found for key \"{0}\", it was referenced in file {1}.\nSet it:\n\
-             \t1. In ~/.temple_conf as {0}=value;\n\
-             \t2. In ~/.temple/template/.temple as {0}=value\n\
-             \t3. In ./.temple/template/.temple as {0}=value\n\
-             \t4. As argument:  `temple new template new_project {0}=value`",
-                key,
-                file.unwrap().display()
-            )
-            .into())
-        }
+    pub fn get_match(&self, key: &str) -> Option<&str> {
+        self.list.iter().find(|a| a.0 == key).map(|a| a.1.as_str())
     }
 
     pub fn from_file_contents(path: &Path) -> Keys {
@@ -52,17 +32,16 @@ impl From<&str> for Keys {
         let no_space = string.replace('\n', "");
         let empty_string = String::from_str("").unwrap();
         for statement in no_space.split(',') {
-            let statement: Vec<&str> = statement.split('=').collect();
+            let mut statement = statement.split('=');
             let to_push: (String, String) = (
-                (*statement.get(0).unwrap_or(&"")).into(),
-                (*statement.get(1).unwrap_or(&"")).into(),
+                (statement.next().unwrap_or("")).into(),
+                (statement.next().unwrap_or("")).into(),
             );
 
             if to_push.0 == empty_string || to_push.1 == empty_string {
                 continue;
-            } else {
-                keys.list.push(to_push);
             }
+            keys.list.push(to_push);
         }
 
         keys

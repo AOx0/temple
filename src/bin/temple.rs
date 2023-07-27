@@ -22,7 +22,11 @@ fn main() {
             in_place,
             overwrite,
         ),
-        Commands::List { short, path } => temple_files.list_available_templates(!short, path),
+        Commands::List {
+            short,
+            path,
+            errors,
+        } => temple_files.list_available_templates(!short, path, !errors),
         Commands::Init => temple_files.init_temple_config_files(),
         Commands::ListArgs {
             template_name,

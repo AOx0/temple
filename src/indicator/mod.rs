@@ -1,79 +1,44 @@
-mod indicators;
 use std::fmt::Display;
 
-pub use indicators::KeyIndicator;
-use indicators::*;
-
-#[derive(Clone, Debug)]
-pub enum Indicator {
-    I1D(Indicator1D),
-    I2D(Indicator2D),
-    I3D(Indicator3D),
-    I0D(IndicatorN),
+#[derive(Clone, Debug, PartialEq, Copy)]
+pub struct Indicator<'a> {
+    contents: &'a str,
 }
 
-impl KeyIndicator for Indicator {
-    fn from_str(string: &str, is_start: bool) -> Result<Self, &'static str> {
-        let res = if string.len() == 1 {
-            let a = Indicator1D::from_str(string, is_start)?;
-            Indicator::I1D(a)
-        } else if string.len() == 2 {
-            let a = Indicator2D::from_str(string, is_start)?;
-            Indicator::I2D(a)
-        } else if string.len() == 2 {
-            let a = Indicator3D::from_str(string, is_start)?;
-            Indicator::I3D(a)
-        } else {
-            let a = IndicatorN::from_str(string, is_start)?;
-            Indicator::I0D(a)
+impl AsRef<str> for Indicator<'_> {
+    fn as_ref(&self) -> &str {
+        self.contents
+    }
+}
+
+impl<'a> Indicator<'a> {
+    pub fn new(string: &'a str) -> Self {
+        Indicator { contents: string }
+    }
+
+    pub fn find_in(&self, slice: &str, from: usize) -> Option<usize> {
+        if slice.is_empty() || slice.len() - from < self.as_ref().len() {
+            return None;
         };
 
-        Ok(res)
+        slice[from..]
+            .as_bytes()
+            .windows(self.as_ref().len())
+            .enumerate()
+            .find_map(|(i, x)| (x == self.as_ref().as_bytes()).then_some(i))
     }
 
-    fn find_in(&self, slice: &[u8], from: usize) -> Option<usize> {
-        match self {
-            Indicator::I1D(a) => a.find_in(slice, from),
-            Indicator::I2D(a) => a.find_in(slice, from),
-            Indicator::I3D(a) => a.find_in(slice, from),
-            Indicator::I0D(a) => a.find_in(slice, from),
-        }
+    pub fn first_char(&self) -> Option<char> {
+        self.as_ref().chars().next()
     }
 
-    fn first_char(&self) -> u8 {
-        match self {
-            Indicator::I1D(a) => a.first_char(),
-            Indicator::I2D(a) => a.first_char(),
-            Indicator::I3D(a) => a.first_char(),
-            Indicator::I0D(a) => a.first_char(),
-        }
-    }
-
-    fn size(&self) -> usize {
-        match self {
-            Indicator::I1D(a) => a.size(),
-            Indicator::I2D(a) => a.size(),
-            Indicator::I3D(a) => a.size(),
-            Indicator::I0D(a) => a.size(),
-        }
+    pub fn size(&self) -> usize {
+        self.as_ref().len()
     }
 }
 
-impl Display for Indicator {
+impl Display for Indicator<'_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Indicator::I1D(i) => {
-                write!(f, "{}", std::str::from_utf8(&[i.0]).expect(&format!("Non UTF-8 Key {:?}", &[i.0])) )
-            },
-            Indicator::I2D(i) => {
-                write!(f, "{}", std::str::from_utf8(&[i.0, i.1]).expect(&format!("Non UTF-8 Key {:?}", &[i.0, i.1])) )
-            },
-            Indicator::I3D(i) => {
-                write!(f, "{}", std::str::from_utf8(&[i.0, i.1, i.2]).expect(&format!("Non UTF-8 Key {:?}", &[i.0, i.1, i.2])) )
-            },
-            Indicator::I0D(i) => {
-                write!(f, "{}", std::str::from_utf8(&i.0).expect(&format!("Non UTF-8 Key {:?}", &i.0)) )
-            }
-        }
+        write!(f, "{}", self.as_ref())
     }
 }

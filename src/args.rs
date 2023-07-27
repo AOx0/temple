@@ -41,6 +41,9 @@ pub enum Commands {
         /// Show templates path
         #[clap(long, short)]
         path: bool,
+        /// Show templates path
+        #[clap(long, short)]
+        errors: bool,
     },
     /// List required arguments for the given template
     ListArgs {

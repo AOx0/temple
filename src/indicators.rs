@@ -1,20 +1,20 @@
-use crate::indicator::{Indicator, KeyIndicator};
+use crate::indicator::Indicator;
 
-#[derive(Clone, Debug)]
-pub struct Indicators {
-    pub start: Indicator,
-    pub end: Indicator,
+#[derive(Clone, Debug, Copy)]
+pub struct Indicators<'a> {
+    pub start: Indicator<'a>,
+    pub end: Indicator<'a>,
 }
 
-impl Indicators {
-    pub fn new(start: &str, end: &str) -> Result<Self, &'static str> {
-        let start = Indicator::from_str(start, true)?;
-        let end = Indicator::from_str(end, false)?;
+impl<'a> Indicators<'a> {
+    pub fn new(start: &'a str, end: &'a str) -> Result<Self, &'static str> {
+        let start = Indicator::new(start);
+        let end = Indicator::new(end);
 
         Ok(Indicators { start, end })
     }
 
-    pub fn find_in(&self, contents: &[u8], from: usize, start: bool) -> std::option::Option<usize> {
+    pub fn find_in(&self, contents: &str, from: usize, start: bool) -> std::option::Option<usize> {
         if start {
             self.start.find_in(contents, from)
         } else {
@@ -22,7 +22,7 @@ impl Indicators {
         }
     }
 
-    pub fn start_char(&self) -> u8 {
+    pub fn start_char(&self) -> Option<char> {
         self.start.first_char()
     }
 
