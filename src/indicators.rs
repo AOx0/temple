@@ -14,12 +14,12 @@ impl<'a> Indicators<'a> {
         Ok(Indicators { start, end })
     }
 
-    pub fn find_in(&self, contents: &str, from: usize, start: bool) -> std::option::Option<usize> {
-        if start {
-            self.start.find_in(contents, from)
-        } else {
-            self.end.find_in(contents, from)
-        }
+    pub fn find_start(&self, contents: &str, from: usize) -> Option<usize> {
+        self.start.find_in(contents, from)
+    }
+
+    pub fn find_end(&self, contents: &str, from: usize) -> Option<usize> {
+        self.end.find_in(contents, from)
     }
 
     pub fn start_char(&self) -> Option<char> {

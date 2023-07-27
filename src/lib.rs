@@ -7,18 +7,14 @@ pub mod contents;
 mod indicator;
 pub mod indicators;
 pub mod keys;
-mod shared;
-mod word;
 
 pub use args::Commands;
 pub use args::{Args, Parser};
-pub use config_files::*;
 pub use contents::Contents;
 pub use contents::*;
 use fs_extra::dir::create_all;
 pub use indicators::Indicators;
 pub use keys::Keys;
-pub use shared::*;
 use std::env;
 use std::{
     env::current_dir,
@@ -27,7 +23,6 @@ use std::{
     path::{Path, PathBuf},
 };
 
-mod config_files;
 mod renderer;
 
 pub struct ConfigFiles {
@@ -390,5 +385,22 @@ mod tests {
 
         println!("{r}");
         assert_eq!(r, "lmao perro");
+    }
+
+    #[test]
+    fn contiguos_parse() {
+        let mut contents = Contents::from_str("{{ jojo }} lmao {{ jaja }}{{ jojo }}").unwrap();
+        let indicators = Indicators::new("{{ ", " }}").unwrap();
+        let keys = Keys::from("jaja=perro,jojo=gato");
+        let replace = contents.replace(indicators, &keys);
+
+        let r = if let Ok(res) = replace {
+            res.get_string()
+        } else {
+            String::from("Invalid chars or data")
+        };
+
+        println!("{r}");
+        assert_eq!(r, "gato lmao perrogato");
     }
 }

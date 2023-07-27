@@ -80,43 +80,30 @@ impl Contents {
         keys: &'a Keys,
     ) -> Result<Replaced<'a>, String> {
         let mut result: Vec<Cow<'a, str>> = Vec::with_capacity(self.contents.len());
-        let (mut i, mut last_i) = (0usize, 0usize);
+        let mut last_i = 0;
 
-        if !(indicators.find_in(&self.contents, i, true).is_some()
-            && indicators.find_in(&self.contents, i, false).is_some())
+        if !(indicators.find_start(&self.contents, 0).is_some()
+            && indicators.find_end(&self.contents, 0).is_some())
         {
             return Ok(Replaced(vec![Cow::Borrowed(&self.contents[..])]));
         }
 
-        while let (true, Some(mut start)) = (
-            i < self.contents.len(),
-            indicators.find_in(&self.contents, i, true),
-        ) {
-            if let Some(end) = indicators.find_in(&self.contents, i, false) {
+        while let Some(mut start) = indicators.find_start(&self.contents, last_i) {
+            start = last_i + start;
+            if let Some(end) = indicators.find_end(&self.contents, start) {
                 result.push(Cow::Borrowed(&self.contents[last_i..start]));
 
-                start += indicators.start_size();
+                let key = &self.contents[start + indicators.start_size()..start + end].trim();
 
-                let replacement = keys.get_match(&self.contents[start..end]);
+                let replacement = keys.get_match(key);
 
                 match replacement {
-                    Some(r) => {
-                        println!("Sustitución a {} de {}", r, &self.contents[start..end]);
-                        result.push(Cow::Borrowed(r))
-                    }
-                    None => {
-                        return Err(format!(
-                            "No key {} found in {}",
-                            &self.contents[start..end],
-                            self.origin.display()
-                        ))
-                    }
+                    Some(r) => result.push(Cow::Borrowed(r)),
+                    None => return Err(format!("No key {key} found in {}", self.origin.display())),
                 }
 
-                i = end + indicators.end_size() - 1;
-                last_i = end + indicators.end_size();
+                last_i = start + end + indicators.end_size();
             }
-            i += 1;
         }
 
         result.push(Cow::Borrowed(&self.contents[last_i..]));
