@@ -231,6 +231,46 @@ fn find_local_templates_folder(from: PathBuf, config_files: &ConfigFiles) -> Opt
     None
 }
 
+pub fn get_template_keys(
+    template_name: &str,
+    prefer_local: bool,
+    config_files: ConfigFiles,
+) -> Result<(), String> {
+    config_files.exists()?;
+    let templates = (&config_files).get_available_templates()?;
+
+    let config = config_files.temple_config;
+
+    let template = templates.get_named(template_name, prefer_local);
+
+    let template: &Path = if let Some(template) = template {
+        if template.path.join(".temple").is_file() {
+            &template.path
+        } else {
+            return Err("Error: Template does not exist".into());
+        }
+    } else {
+        return Err("Error: Template does not exist".into());
+    };
+
+    let keys_project_config = Keys::from_file_contents(&template.join(".temple"));
+    let mut project_keys = Keys::from("");
+    project_keys.add(keys_project_config);
+    project_keys.add(Keys::from_file_contents(&config));
+
+    println!(
+        "{}",
+        project_keys
+            .list
+            .iter()
+            .map(|(k, _)| k.to_owned())
+            .collect::<Vec<String>>()
+            .join(" ")
+    );
+
+    Ok(())
+}
+
 pub fn create_project_from_template(
     template_name: &str,
     project_name: &str,

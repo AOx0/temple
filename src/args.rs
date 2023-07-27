@@ -42,6 +42,14 @@ pub enum Commands {
         #[clap(long, short)]
         path: bool,
     },
+    /// List required arguments for the given template
+    ListArgs {
+        /// Name of the template
+        template_name: String,
+        /// Prefer local (./.temple/template_name) if available [default: prefer ~/.temple/template_name]
+        #[clap(long, short)]
+        local: bool,
+    },
     /// Initialize template directory at ~/.
     Init,
 }
