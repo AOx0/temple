@@ -1,4 +1,4 @@
-use crate::indicator::Indicator;
+use super::indicator::Indicator;
 
 #[derive(Clone, Debug, Copy)]
 pub struct Indicators<'a> {
@@ -14,23 +14,28 @@ impl<'a> Indicators<'a> {
         Ok(Indicators { start, end })
     }
 
-    #[must_use] pub fn find_start(&self, contents: &str, from: usize) -> Option<usize> {
+    #[must_use]
+    pub fn find_start(&self, contents: &str, from: usize) -> Option<usize> {
         self.start.find_in(contents, from)
     }
 
-    #[must_use] pub fn find_end(&self, contents: &str, from: usize) -> Option<usize> {
+    #[must_use]
+    pub fn find_end(&self, contents: &str, from: usize) -> Option<usize> {
         self.end.find_in(contents, from)
     }
 
-    #[must_use] pub fn start_char(&self) -> Option<char> {
+    #[must_use]
+    pub fn start_char(&self) -> Option<char> {
         self.start.first_char()
     }
 
-    #[must_use] pub fn start_size(&self) -> usize {
+    #[must_use]
+    pub fn start_size(&self) -> usize {
         self.start.size()
     }
 
-    #[must_use] pub fn end_size(&self) -> usize {
+    #[must_use]
+    pub fn end_size(&self) -> usize {
         self.end.size()
     }
 }

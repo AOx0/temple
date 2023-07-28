@@ -6,7 +6,7 @@
 
 mod args;
 pub mod contents;
-mod indicator;
+pub mod indicator;
 pub mod indicators;
 pub mod keys;
 

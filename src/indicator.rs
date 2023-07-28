@@ -10,10 +10,12 @@ impl AsRef<str> for Indicator<'_> {
 }
 
 impl<'a> Indicator<'a> {
+    #[must_use]
     pub fn new(s: &'a str) -> Self {
         Indicator(s)
     }
 
+    #[must_use]
     pub fn find_in(&self, slice: &str, from: usize) -> Option<usize> {
         if slice.is_empty() || slice.len() < from {
             return None;
@@ -22,10 +24,12 @@ impl<'a> Indicator<'a> {
         slice[from..].find(self.as_ref())
     }
 
+    #[must_use]
     pub fn first_char(&self) -> Option<char> {
         self.as_ref().chars().next()
     }
 
+    #[must_use]
     pub fn size(&self) -> usize {
         self.as_ref().len()
     }
