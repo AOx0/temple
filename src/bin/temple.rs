@@ -1,44 +1,35 @@
-use clap::Parser;
-use temple::*;
+use anyhow::Result;
+use std::{process::ExitCode, str::FromStr};
+use temple::Config;
 
-fn main() {
-    let args = Args::parse();
-    let temple_files = ConfigFiles::get();
+fn app() -> Result<()> {
+    let config = r#"
+        hola = 4 
+        edades = [ [ 1, 2], 3 ] 
+        nombre = "Pedro"
+        objeto: { 
+            nombre: "Daniel", 
+            edad: 21
+        }
+        objetos: [
+            { nombre: "David" },
+            { nombre: "Daniel" },
+        ]    
+    "#;
 
-    let result = match args.command {
-        Commands::New {
-            template_name,
-            project_name,
-            cli_keys,
-            local,
-            in_place,
-            overwrite,
-        } => create_project_from_template(
-            template_name.trim_start_matches("local:"),
-            &project_name,
-            &cli_keys,
-            temple_files,
-            local || template_name.starts_with("local:"),
-            in_place,
-            overwrite,
-        ),
-        Commands::List {
-            short,
-            path,
-            errors,
-        } => temple_files.list_available_templates(!short, path, !errors),
-        Commands::Init => temple_files.init_temple_config_files(),
-        Commands::ListArgs {
-            template_name,
-            local,
-        } => get_template_keys(
-            template_name.trim_start_matches("local:"),
-            local || template_name.starts_with("local:"),
-            temple_files,
-        ),
-    };
+    let Config(config) = Config::from_str(config)?;
 
-    if let Err(msg) = result {
-        println!("{msg}")
+    println!("{:?}", config);
+
+    Ok(())
+}
+
+fn main() -> ExitCode {
+    match app() {
+        Ok(()) => ExitCode::SUCCESS,
+        Err(e) => {
+            eprintln!("Error: {e}");
+            ExitCode::FAILURE
+        }
     }
 }
