@@ -1,10 +1,10 @@
 use anyhow::Result;
 use std::{process::ExitCode, str::FromStr};
-use temple::Config;
+use temple::Values;
 
 fn app() -> Result<()> {
     let config = r#"
-        hola = 4 
+        hola = 4. 
         edades = [ [ 1, 2], 3 ] 
         nombre = "Pedro"
         objeto: { 
@@ -17,9 +17,11 @@ fn app() -> Result<()> {
         ]    
     "#;
 
-    let Config(config) = Config::from_str(config)?;
+    let Values(config) = Values::from_str(config)?;
 
     println!("{:?}", config);
+
+    println!("{:?}", config.keys().collect::<Vec<_>>());
 
     Ok(())
 }

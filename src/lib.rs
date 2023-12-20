@@ -6,5 +6,6 @@
 #![deny(clippy::unwrap_used)]
 
 mod config;
+mod values;
 
-pub use config::{Config, Expr};
+pub use values::Values;

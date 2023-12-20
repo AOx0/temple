@@ -3,6 +3,9 @@ pub use logos::Logos;
 #[derive(Logos, Debug, PartialEq, Clone, Copy)]
 #[logos(skip r"[ \t\n\f]+")]
 pub enum Token<'i> {
+    #[regex("[+-]?[0-9]*[.][0-9]*", |lex| format!("{num}0", num = lex.slice()).parse().ok())]
+    FNumber(f64),
+
     #[regex("[+-][1-9][0-9]*", |lex| lex.slice().parse().ok())]
     SNumber(isize),
 
@@ -11,6 +14,7 @@ pub enum Token<'i> {
     UNumber(usize),
 
     #[regex(r#""[^"]*""#, |lex| lex.slice().trim_matches('"'))]
+    #[regex(r#"'[^']*'"#, |lex| lex.slice().trim_matches('\''))]
     String(&'i str),
 
     #[regex(r#"(?i:false)"#, |_| false)]
