@@ -2,31 +2,144 @@ mod parser;
 mod token;
 
 use anyhow::{anyhow, ensure};
-use std::ops::{Deref, DerefMut};
+use std::{
+    collections::HashMap,
+    ops::{Deref, DerefMut},
+};
 use tera::{Map, Value};
 use token::{Logos, Token};
 
 #[derive(Debug, PartialEq, Eq)]
-pub struct Values(pub Map<String, Value>);
+pub struct Values {
+    pub value_map: ValueMap,
+    pub type_map: TypeMap,
+}
+
+#[derive(Debug, PartialEq, Eq, Default)]
+pub struct ValueMap(HashMap<String, Value>);
+
+#[derive(Debug, PartialEq, Eq, Default)]
+pub struct TypeMap(HashMap<String, Type>);
+
+#[derive(Debug, PartialEq, Eq)]
+pub enum Type {
+    Number,
+    String,
+    Object(HashMap<String, Type>),
+    Array(Box<Type>),
+    Bool,
+    Unknown,
+    Any,
+}
+
+impl Type {
+    /// Verify if a given value matches the current Type variant
+    #[must_use]
+    pub fn value_matches(&self, value: &Value) -> bool {
+        if let Type::Any = self {
+            true
+        } else {
+            &Type::from(value) == self
+        }
+    }
+
+    #[must_use]
+    pub fn is_equivalent(&self, other: &Type) -> bool {
+        if &Type::Any == self || &Type::Any == other {
+            true
+        } else {
+            self == other
+        }
+    }
+}
+
+impl std::fmt::Display for Type {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Type::Number => write!(f, "Number"),
+            Type::String => write!(f, "String"),
+            Type::Object(fields) => {
+                write!(f, "Object {{ ")?;
+
+                for (i, (k, v)) in fields.iter().enumerate() {
+                    write!(f, "{k}: {v}")?;
+                    if i != fields.len() - 1 {
+                        write!(f, ", ")?;
+                    }
+                }
+
+                write!(f, " }}")
+            }
+            Type::Array(t) => write!(f, "Array [ {t} ]"),
+            Type::Bool => write!(f, "Bool"),
+            Type::Unknown => write!(f, "Unknown"),
+            Type::Any => write!(f, "Any"),
+        }
+    }
+}
+
+impl From<&Value> for Type {
+    fn from(value: &Value) -> Self {
+        match value {
+            Value::Null => Type::Any,
+            Value::Bool(_) => Type::Bool,
+            Value::Number(_) => Type::Number,
+            Value::String(_) => Type::String,
+            Value::Array(a) => Type::Array(Box::new(match a.as_slice() {
+                [] => Type::Any,
+                [first] => Type::from(first),
+                [first, ..] => {
+                    for e in a {
+                        assert!(Type::from(e).is_equivalent(&Type::from(first)));
+                    }
+                    Type::from(first)
+                }
+            })),
+            Value::Object(o) => {
+                let mut fields = HashMap::new();
+                for (k, v) in o {
+                    fields.insert(k.to_owned(), Type::from(v));
+                }
+                Type::Object(fields)
+            }
+        }
+    }
+}
 
 impl Values {
     pub fn stash(&mut self, other: Map<String, Value>) {
         for (k, v) in other {
-            self.insert(k, v)
+            //TODO: Stash data type
+            self.value_map
+                .insert(k, v)
                 .iter()
                 .for_each(|v| println!("Warn: Overriding value {v:?}"));
         }
     }
 }
 
-impl DerefMut for Values {
+impl DerefMut for ValueMap {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.0
     }
 }
 
-impl Deref for Values {
-    type Target = Map<String, Value>;
+impl Deref for ValueMap {
+    type Target = HashMap<String, Value>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl DerefMut for TypeMap {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.0
+    }
+}
+
+impl Deref for TypeMap {
+    type Target = HashMap<String, Type>;
 
     fn deref(&self) -> &Self::Target {
         &self.0
@@ -41,16 +154,17 @@ impl std::str::FromStr for Values {
             .collect::<std::result::Result<Vec<Token<'_>>, _>>()
             .map_err(|()| anyhow!("Failed to get tokens"))?;
 
-        if let (Value::Object(config), remain) = parser::parse_object(&tokens, false)? {
-            ensure!(
-                remain.is_empty(),
-                "Error while parsing config, bad syntax, ramains: {remain:?}"
-            );
+        let ((value_map, type_map), remain) = parser::parse_config(&tokens)?;
 
-            Ok(Values(config))
-        } else {
-            unreachable!()
-        }
+        ensure!(
+            remain.is_empty(),
+            "Error while parsing config, bad syntax, ramains: {remain:?}"
+        );
+
+        Ok(Values {
+            value_map,
+            type_map,
+        })
     }
 }
 
@@ -59,7 +173,7 @@ mod tests {
     use logos::Logos;
     use tera::Value;
 
-    use super::{parser::try_from, token::Token};
+    use super::{parser::try_value_from, token::Token};
 
     #[test]
     fn comma_ending_list() {
@@ -70,7 +184,7 @@ mod tests {
             .collect::<Vec<_>>();
 
         assert_eq!(
-            try_from(tokens.as_slice()).expect("This should never fail"),
+            try_value_from(tokens.as_slice()).expect("This should never fail"),
             (
                 Value::Array(vec![
                     Value::Number(1.into()),
@@ -91,7 +205,7 @@ mod tests {
             .collect::<Vec<_>>();
 
         assert_eq!(
-            try_from(tokens.as_slice()).expect("This should never fail"),
+            try_value_from(tokens.as_slice()).expect("This should never fail"),
             (
                 Value::Array(vec![
                     Value::Number(1.into()),
@@ -112,7 +226,7 @@ mod tests {
             .collect::<Vec<_>>();
 
         assert_eq!(
-            try_from(tokens.as_slice())
+            try_value_from(tokens.as_slice())
                 .map_err(|e| { e.to_string() })
                 .expect_err("This should never fail")
                 .as_str(),

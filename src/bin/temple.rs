@@ -1,27 +1,41 @@
 use anyhow::Result;
 use std::{process::ExitCode, str::FromStr};
-use temple::Values;
+use temple::values::{Type, Values};
 
 fn app() -> Result<()> {
     let config = r#"
-        hola = 4. 
-        edades = [ [ 1, 2], 3 ] 
+        edad: Number
+        edad2: Any
+        hola: Number = 4.;
+        vacio = [];
+        edades = [ 1, 2 , 3 ] 
         nombre = "Pedro"
-        objeto: { 
+        objeto = { 
             nombre: "Daniel", 
             edad: 21
         }
-        objetos: [
+        objetos = [
             { nombre: "David" },
             { nombre: "Daniel" },
         ]    
     "#;
 
-    let Values(config) = Values::from_str(config)?;
+    let Values {
+        value_map: config,
+        type_map: types,
+    } = Values::from_str(config)?;
 
     println!("{:?}", config);
 
     println!("{:?}", config.keys().collect::<Vec<_>>());
+
+    for (k, v) in config.iter() {
+        println!(
+            "Type of {k}: {t} (declared: {d})",
+            t = Type::from(v),
+            d = types.get(k).unwrap()
+        );
+    }
 
     Ok(())
 }

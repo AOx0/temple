@@ -36,14 +36,60 @@ pub enum Token<'i> {
     #[token(",")]
     Comma,
 
+    #[token(";")]
+    Semicolon,
+
     #[token("=")]
     Eq,
 
     #[token(":")]
     EqD,
 
+    #[regex(r#"(?i:number)"#)]
+    KwNumber,
+
+    #[regex(r#"(?i:string)"#)]
+    KwString,
+
+    #[regex(r#"(?i:bool)"#)]
+    KwBool,
+
+    #[regex(r#"(?i:object)"#)]
+    KwObject,
+
+    #[regex(r#"(?i:array)"#)]
+    KwArray,
+
+    #[regex(r#"(?i:any)"#)]
+    KwAny,
+
     #[regex("(?i:[a-z][a-z0-9]*)")]
     Ident(&'i str),
+}
+
+impl Token<'_> {
+    pub fn is_expr_decl(&self) -> bool {
+        matches!(
+            self,
+            Token::String(_)
+                | Token::UNumber(_)
+                | Token::SNumber(_)
+                | Token::SqOpen
+                | Token::CyOpen
+        )
+    }
+
+    pub fn is_type_decl(&self) -> bool {
+        matches!(
+            self,
+            Token::KwNumber
+                | Token::KwString
+                | Token::KwArray
+                | Token::KwObject
+                | Token::KwBool
+                | Token::KwAny
+        )
+    }
 }
 
 #[cfg(test)]
