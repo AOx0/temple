@@ -24,6 +24,7 @@ pub struct Templates {
 }
 
 impl Templates {
+    #[must_use]
     pub fn get_named(&self, name: &str, prefer_local: bool) -> Option<&Template> {
         let local = self.local.iter().find(|&t| t.name == name);
         let global = self.global.iter().find(|&t| t.name == name);
@@ -38,13 +39,8 @@ impl Templates {
 }
 
 impl TempleDirs {
-    pub fn display_available_templates(&self, config: Commands) -> anyhow::Result<()> {
-        if let Commands::List {
-            short,
-            path,
-            errors,
-        } = config
-        {
+    pub fn display_available_templates(&self, config: &Commands) -> anyhow::Result<()> {
+        if let Commands::List { short, path, .. } = config {
             let long = !short;
             let globals = Self::get_templates_in_dir(&self.global_config)?;
             let locals = if let Some(l) = self

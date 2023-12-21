@@ -11,7 +11,7 @@ fn app() -> Result<()> {
     let temple_dirs = TempleDirs::default_paths()?;
 
     let result = match args.command {
-        Commands::List { .. } => temple_dirs.display_available_templates(args.command),
+        Commands::List { .. } => temple_dirs.display_available_templates(&args.command),
         _ => unimplemented!(),
     };
 
