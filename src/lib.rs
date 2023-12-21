@@ -5,6 +5,7 @@
 #![allow(clippy::missing_panics_doc)]
 #![deny(clippy::unwrap_used)]
 
+pub mod args;
 pub mod config;
 pub mod template;
 pub mod values;

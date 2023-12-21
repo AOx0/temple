@@ -1,15 +1,124 @@
-use anyhow::{anyhow, ensure, Context};
+use anyhow::{anyhow, bail, ensure, Context};
 use derive_builder::Builder;
 use directories::UserDirs;
 use std::path::{Path, PathBuf};
 
-use crate::template::Template;
+use crate::args::Commands;
 
 #[derive(Builder)]
 pub struct TempleDirs {
     user_home: PathBuf,
     global_config: PathBuf,
     local_config: Option<PathBuf>,
+}
+
+#[derive(Clone)]
+pub struct Template {
+    pub path: PathBuf,
+    pub name: String,
+}
+
+pub struct Templates {
+    pub global: Vec<Template>,
+    pub local: Vec<Template>,
+}
+
+impl Templates {
+    pub fn get_named(&self, name: &str, prefer_local: bool) -> Option<&Template> {
+        let local = self.local.iter().find(|&t| t.name == name);
+        let global = self.global.iter().find(|&t| t.name == name);
+
+        match (local, global) {
+            (Some(local), Some(global)) => Some(if prefer_local { local } else { global }),
+            (None, Some(global)) => Some(global),
+            (Some(local), None) => Some(local),
+            _ => None,
+        }
+    }
+}
+
+impl TempleDirs {
+    pub fn display_available_templates(&self, config: Commands) -> anyhow::Result<()> {
+        if let Commands::List {
+            short,
+            path,
+            errors,
+        } = config
+        {
+            let long = !short;
+            let globals = Self::get_templates_in_dir(&self.global_config)?;
+            let locals = if let Some(l) = self
+                .local_config
+                .as_ref()
+                .map(|c| Self::get_templates_in_dir(c.as_path()))
+            {
+                l?
+            } else {
+                Vec::default()
+            };
+
+            let iter = [globals, locals];
+
+            for (i, iter) in iter.iter().enumerate() {
+                (!iter.is_empty()).then(|| {
+                    if long {
+                        println!(
+                            "Available {} templates (def at '{}'): ",
+                            if i == 0 { "global" } else { "local" },
+                            (i == 0)
+                                .then_some(self.global_config())
+                                .unwrap_or_else(|| {
+                                    iter.first()
+                                        .expect("TODO: Fix this")
+                                        .path
+                                        .parent()
+                                        .expect("TODO: Fix this")
+                                })
+                                .to_str()
+                                .unwrap_or("Failed to convert path to str")
+                                .replace(
+                                    self.user_home()
+                                        .to_str()
+                                        .unwrap_or("Failed to convert path to str"),
+                                    "~"
+                                )
+                        );
+                    }
+
+                    print!(
+                        "{}",
+                        iter.iter()
+                            .map(|a| format!(
+                                "{dotchr}{tename}{tepath}{spacer}",
+                                dotchr = if long { "    " } else { "" },
+                                tename = (long || i == 0)
+                                    .then_some(a.name.clone())
+                                    .unwrap_or_else(|| format!("local:{}", a.name)),
+                                tepath = path
+                                    .then_some(format!(
+                                        "\t'{}'",
+                                        a.path.to_str().unwrap_or("Failed to convert path to str")
+                                    ))
+                                    .unwrap_or(String::new()),
+                                spacer = if long { "\n" } else { " " }
+                            )
+                            .replace(
+                                self.user_home()
+                                    .to_str()
+                                    .unwrap_or("Failed to convert path to str"),
+                                "~"
+                            ))
+                            .collect::<String>(),
+                    );
+                    (long || i != 0).then(|| println!());
+                });
+            }
+
+            Ok(())
+        } else {
+            bail!("Invalid argument")
+        }
+    }
 }
 
 impl TempleDirs {
@@ -118,6 +227,41 @@ impl TempleDirs {
         }
 
         Ok(None)
+    }
+
+    /// Get a [`Vec`] of all templates inside a given directory. A path is considered
+    /// to be a template if:
+    /// - The path is a directory
+    /// - It contains a `.temple` file
+    ///
+    /// # Errors
+    ///
+    /// This function will return an error if any IO error happens while getting path
+    /// file types or reding entries in directories or the path is not a dir.
+    pub fn get_templates_in_dir(path: &Path) -> anyhow::Result<Vec<Template>> {
+        ensure!(
+            path.is_dir(),
+            anyhow!("Path {} is not a directory", path.display())
+        );
+        let mut res = Vec::new();
+
+        for entry in path.read_dir()? {
+            let entry = entry?;
+            let root = entry.path().join(".temple");
+
+            if entry.file_type()?.is_dir() && (root.exists() && root.is_file()) {
+                res.push(Template {
+                    name: entry
+                        .file_name()
+                        .to_str()
+                        .context("Failed to convert OsString to String")?
+                        .to_string(),
+                    path: entry.path(),
+                });
+            }
+        }
+
+        Ok(res)
     }
 
     /// Returns a reference to the user home of this [`TempleDirs`].

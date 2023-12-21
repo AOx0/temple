@@ -1,40 +1,22 @@
 use anyhow::Result;
-use std::{process::ExitCode, str::FromStr};
-use temple::values::{Type, Values};
+use clap::Parser;
+use std::process::ExitCode;
+use temple::{
+    args::{Args, Commands},
+    config::TempleDirs,
+};
 
 fn app() -> Result<()> {
-    let config = r#"
-        edad: Number
-        edad2: Any
-        hola: Number = 4.;
-        vacio = [];
-        edades = [ 1, 2 , 3 ] 
-        nombre = "Pedro"
-        objeto = { 
-            nombre: "Daniel", 
-            edad: 21
-        }
-        objetos = [
-            { nombre: "David" },
-            { nombre: "Daniel" },
-        ]    
-    "#;
+    let args = Args::parse();
+    let temple_dirs = TempleDirs::default_paths()?;
 
-    let Values {
-        value_map: config,
-        type_map: types,
-    } = Values::from_str(config)?;
+    let result = match args.command {
+        Commands::List { .. } => temple_dirs.display_available_templates(args.command),
+        _ => unimplemented!(),
+    };
 
-    println!("{:?}", config);
-
-    println!("{:?}", config.keys().collect::<Vec<_>>());
-
-    for (k, v) in config.iter() {
-        println!(
-            "Type of {k}: {t} (declared: {d})",
-            t = Type::from(v),
-            d = types.get(k).unwrap()
-        );
+    if let Err(msg) = result {
+        println!("{msg}")
     }
 
     Ok(())
