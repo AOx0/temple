@@ -23,22 +23,33 @@ pub struct Templates {
     pub local: Vec<Template>,
 }
 
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub enum Prefer {
+    Local,
+    Global,
+}
+
 impl Templates {
     #[must_use]
-    pub fn get_named(&self, name: &str, prefer_local: bool) -> Option<&Template> {
+    pub fn get_named(&self, name: &str, prefers: &Prefer) -> Option<&Template> {
         let local = self.local.iter().find(|&t| t.name == name);
         let global = self.global.iter().find(|&t| t.name == name);
 
         match (local, global) {
-            (Some(local), Some(global)) => Some(if prefer_local { local } else { global }),
-            (None, Some(global)) => Some(global),
-            (Some(local), None) => Some(local),
+            (Some(local), _) if prefers == &Prefer::Local => Some(local),
+            (_, Some(global)) if prefers == &Prefer::Global => Some(global),
+            (None, Some(found)) | (Some(found), None) => Some(found),
             _ => None,
         }
     }
 }
 
 impl TempleDirs {
+    /// Creates the global config inside the global directory.
+    ///
+    /// # Errors
+    ///
+    /// This function will return an error if the global config directory does not exist or any IO error occurs
     pub fn create_global_config(&self) -> anyhow::Result<()> {
         let dir_exists = self.global_config().exists() && self.global_config().is_dir();
 
@@ -63,20 +74,10 @@ impl TempleDirs {
         } else if exists {
             println!(
                 "The global config file at path {} exists but is not a file. Removing existing path.",
-                self.global_config().display(),
+                config_file.display(),
             );
 
-            if self.global_config().metadata()?.is_dir() {
-                std::fs::remove_dir_all(self.global_config())?;
-            } else {
-                // https://stackoverflow.com/questions/76351822/creating-and-removing-symlinks
-
-                #[cfg(target_os = "windows")]
-                std::fs::remove_dir(self.global_config())?;
-
-                #[cfg(not(target_os = "windows"))]
-                std::fs::remove_file(self.global_config())?;
-            }
+            Self::remove_path(&config_file)?;
         }
 
         std::fs::OpenOptions::new()
@@ -86,6 +87,11 @@ impl TempleDirs {
         Ok(())
     }
 
+    /// Creates the global directory.
+    ///
+    /// # Errors
+    ///
+    /// This function will return an error if any IO error occurs
     pub fn create_global_dir(&self) -> anyhow::Result<()> {
         let exists = self.global_config().exists();
 
@@ -102,17 +108,7 @@ impl TempleDirs {
                 self.global_config().display(),
             );
 
-            if self.global_config().metadata()?.is_file() {
-                std::fs::remove_file(self.global_config())?;
-            } else {
-                // https://stackoverflow.com/questions/76351822/creating-and-removing-symlinks
-
-                #[cfg(target_os = "windows")]
-                std::fs::remove_dir(self.global_config())?;
-
-                #[cfg(not(target_os = "windows"))]
-                std::fs::remove_file(self.global_config())?;
-            }
+            Self::remove_path(self.global_config())?;
         }
 
         std::fs::create_dir_all(self.global_config())?;
@@ -203,6 +199,28 @@ impl TempleDirs {
     #[must_use]
     pub fn builder() -> TempleDirsBuilder {
         TempleDirsBuilder::create_empty()
+    }
+
+    pub fn remove_path(path: &Path) -> anyhow::Result<()> {
+        let file_type = path.metadata()?.file_type();
+
+        if file_type.is_symlink() {
+            // https://stackoverflow.com/questions/76351822/creating-and-removing-symlinks
+
+            #[cfg(target_os = "windows")]
+            std::fs::remove_dir(path)?;
+
+            #[cfg(not(target_os = "windows"))]
+            std::fs::remove_file(path)?;
+        } else if file_type.is_dir() {
+            std::fs::remove_dir_all(path)?;
+        } else if file_type.is_file() {
+            std::fs::remove_file(path)?;
+        } else {
+            unreachable!("Path {} not a symlink, file or dir", path.display())
+        }
+
+        Ok(())
     }
 
     /// Attempt to create a new [`TempleDirs`] instance with sane defaults for
