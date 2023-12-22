@@ -7,6 +7,16 @@ pub struct Args {
     pub command: Commands,
 }
 
+impl Args {
+    #[must_use]
+    pub fn errors(&self) -> bool {
+        match self.command {
+            Commands::List { errors, .. } => !errors,
+            Commands::Init | Commands::New { .. } => true,
+        }
+    }
+}
+
 #[derive(Subcommand, Debug)]
 pub enum Commands {
     /// Create a new project from a template
@@ -41,7 +51,7 @@ pub enum Commands {
         /// Show templates path
         #[clap(long, short)]
         path: bool,
-        /// Show templates path
+        /// Don't show error messages
         #[clap(long, short)]
         errors: bool,
     },

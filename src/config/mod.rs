@@ -39,6 +39,87 @@ impl Templates {
 }
 
 impl TempleDirs {
+    pub fn create_global_config(&self) -> anyhow::Result<()> {
+        let dir_exists = self.global_config().exists() && self.global_config().is_dir();
+
+        ensure!(
+            dir_exists,
+            anyhow!(
+                "Global config directory {} does not exist",
+                self.global_config().display()
+            )
+        );
+
+        let config_file = self.global_config().join("temple.conf");
+        let exists = config_file.exists();
+
+        if exists && config_file.is_file() {
+            println!(
+                "The global config file at path {} already exists. Skipping creation.",
+                config_file.display()
+            );
+
+            return Ok(());
+        } else if exists {
+            println!(
+                "The global config file at path {} exists but is not a file. Removing existing path.",
+                self.global_config().display(),
+            );
+
+            if self.global_config().metadata()?.is_dir() {
+                std::fs::remove_dir_all(self.global_config())?;
+            } else {
+                // https://stackoverflow.com/questions/76351822/creating-and-removing-symlinks
+
+                #[cfg(target_os = "windows")]
+                std::fs::remove_dir(self.global_config())?;
+
+                #[cfg(not(target_os = "windows"))]
+                std::fs::remove_file(self.global_config())?;
+            }
+        }
+
+        std::fs::OpenOptions::new()
+            .create_new(true)
+            .open(config_file)?;
+
+        Ok(())
+    }
+
+    pub fn create_global_dir(&self) -> anyhow::Result<()> {
+        let exists = self.global_config().exists();
+
+        if exists && self.global_config().is_dir() {
+            println!(
+                "The global config directory at path {} already exists. Skipping creation.",
+                self.global_config().display()
+            );
+
+            return Ok(());
+        } else if exists {
+            println!(
+                "The global config directory at path {} exists but is not a directory. Removing existing path.",
+                self.global_config().display(),
+            );
+
+            if self.global_config().metadata()?.is_file() {
+                std::fs::remove_file(self.global_config())?;
+            } else {
+                // https://stackoverflow.com/questions/76351822/creating-and-removing-symlinks
+
+                #[cfg(target_os = "windows")]
+                std::fs::remove_dir(self.global_config())?;
+
+                #[cfg(not(target_os = "windows"))]
+                std::fs::remove_file(self.global_config())?;
+            }
+        }
+
+        std::fs::create_dir_all(self.global_config())?;
+
+        Ok(())
+    }
+
     pub fn display_available_templates(&self, config: &Commands) -> anyhow::Result<()> {
         if let Commands::List { short, path, .. } = config {
             let long = !short;

@@ -6,12 +6,15 @@ use temple::{
     config::TempleDirs,
 };
 
-fn app() -> Result<()> {
-    let args = Args::parse();
+fn app(args: &Args) -> Result<()> {
     let temple_dirs = TempleDirs::default_paths()?;
 
     let result = match args.command {
         Commands::List { .. } => temple_dirs.display_available_templates(&args.command),
+        Commands::Init => {
+            temple_dirs.create_global_dir()?;
+            temple_dirs.create_global_config()
+        }
         _ => unimplemented!(),
     };
 
@@ -23,10 +26,14 @@ fn app() -> Result<()> {
 }
 
 fn main() -> ExitCode {
-    match app() {
+    let args = Args::parse();
+
+    match app(&args) {
         Ok(()) => ExitCode::SUCCESS,
         Err(e) => {
-            eprintln!("Error: {e}");
+            if !args.errors() {
+                eprintln!("Error: {e}");
+            }
             ExitCode::FAILURE
         }
     }
