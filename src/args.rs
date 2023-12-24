@@ -1,3 +1,5 @@
+use std::path::PathBuf;
+
 pub use clap::{Parser, Subcommand};
 
 #[derive(Parser)]
@@ -12,7 +14,7 @@ impl Args {
     pub fn errors(&self) -> bool {
         match self.command {
             Commands::List { errors, .. } => !errors,
-            Commands::Init | Commands::New { .. } => true,
+            Commands::Init | Commands::New { .. } | Commands::DebugConfig { .. } => true,
         }
     }
 }
@@ -54,6 +56,11 @@ pub enum Commands {
         /// Don't show error messages
         #[clap(long, short)]
         errors: bool,
+    },
+    /// Parse and dump objects to stdout
+    DebugConfig {
+        /// The path to the configuration file
+        path: PathBuf,
     },
     /// Initialize temple configuration directory
     Init,

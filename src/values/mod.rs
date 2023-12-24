@@ -116,6 +116,25 @@ impl Values {
                 .for_each(|v| println!("Warn: Overriding value {v:?}"));
         }
     }
+
+    pub fn verify_types(&self) -> anyhow::Result<()> {
+        let mut res = Ok(());
+
+        for (k, v) in self.value_map.iter() {
+            let decl_type = self.type_map.get(k).expect("Missing value");
+            let val_type = Type::from(v);
+
+            if !decl_type.is_equivalent(&val_type) {
+                println!(
+                    "Data type for value {k:?} of type {decl_type:?} does not conform to the defined value {v:?} of type {val_type:?}",
+                );
+
+                res = Err(anyhow!("Invalid configuration values/types"));
+            }
+        }
+
+        res
+    }
 }
 
 impl DerefMut for ValueMap {

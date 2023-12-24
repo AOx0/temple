@@ -1,9 +1,10 @@
 use anyhow::Result;
 use clap::Parser;
-use std::process::ExitCode;
+use std::{process::ExitCode, str::FromStr};
 use temple::{
     args::{Args, Commands},
     config::TempleDirs,
+    values::Values,
 };
 
 fn app(args: &Args) -> Result<()> {
@@ -14,6 +15,14 @@ fn app(args: &Args) -> Result<()> {
         Commands::Init => {
             temple_dirs.create_global_dir()?;
             temple_dirs.create_global_config()
+        }
+        Commands::DebugConfig { ref path } => {
+            let contents = std::fs::read_to_string(path)?;
+
+            let values = Values::from_str(&contents)?;
+            println!("{:?}", values);
+
+            values.verify_types()
         }
         _ => unimplemented!(),
     };
