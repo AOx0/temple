@@ -1,32 +1,28 @@
 use anyhow::{anyhow, ensure};
 
-pub struct Delimiters<'a>(Delimiter<'a>, Delimiter<'a>);
+pub struct Delimiters<'a>(pub Delimiter<'a>, pub Delimiter<'a>);
 
 impl Delimiters<'_> {
-    fn start(&self) -> Delimiter<'_> {
-        self.0
+    #[must_use]
+    pub fn delimiters(&self) -> (&str, &str) {
+        (self.0 .0, self.1 .0)
     }
 
-    fn end(&self) -> Delimiter<'_> {
-        self.1
+    #[must_use]
+    pub fn sizes(&self) -> (usize, usize) {
+        (self.0.len(), self.1.len())
     }
 
-    fn start_size(&self) -> usize {
-        self.0.len()
-    }
-
-    fn end_size(&self) -> usize {
-        self.1.len()
-    }
-
-    fn first_open_chars(&self) -> (char, char) {
+    #[must_use]
+    pub fn first_open_chars(&self) -> (char, char) {
         (
             self.0.chars().next().expect("Asserted on Self::new"),
             self.0.chars().nth(1).expect("Asserted on Self::new"),
         )
     }
 
-    fn first_close_chars(&self) -> (char, char) {
+    #[must_use]
+    pub fn first_close_chars(&self) -> (char, char) {
         (
             self.1.chars().next().expect("Asserted on Self::new"),
             self.1.chars().nth(1).expect("Asserted on Self::new"),
@@ -58,7 +54,7 @@ impl<'a> Delimiters<'a> {
 }
 
 #[derive(Debug, Clone, Copy)]
-pub struct Delimiter<'a>(&'a str);
+pub struct Delimiter<'a>(pub &'a str);
 
 impl<'a> From<&'a str> for Delimiter<'a> {
     fn from(value: &'a str) -> Self {
