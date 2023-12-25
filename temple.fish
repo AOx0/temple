@@ -1,4 +1,4 @@
-set -l commands list new init help
+set -l commands list new init help 'debug-config'
 set -l templates (temple list -se 2> /dev/null | tr " " "\n" || echo "")
 
 function __fish_temple_contains_temple_new
@@ -24,7 +24,7 @@ function __fish_temple_complete_templates
 end
 
 function __fish_temple_help_subcommand_completion
-    set -l commands list new init help
+    set -l commands list new init help 'debug-config'
     set -l cmd_args (commandline -opc)
 
     if test (count $cmd_args) -eq 2
@@ -57,7 +57,11 @@ complete -c temple -n "not __fish_seen_subcommand_from help" -s h -l help -d 'Pr
 complete -c temple -n "not __fish_seen_subcommand_from $commands" -a new -d 'Create a new project from a template'
 complete -c temple -n "not __fish_seen_subcommand_from $commands" -a list -d 'List existing templates'
 complete -c temple -n "not __fish_seen_subcommand_from $commands" -a init -d 'Initialize template directory at ~/.'
+complete -c temple -n "not __fish_seen_subcommand_from $commands" -a debug-config -d 'Parse and dump objects to stdout'
 complete -c temple -n "not __fish_seen_subcommand_from $commands" -a help -d 'Print this message or the help of the given subcommand(s)'
+
+#debub
+complete -c temple -n "__fish_seen_subcommand_from debug-config" -F
 
 # help
 complete -c temple -f -n "__fish_seen_subcommand_from help" -a "(__fish_temple_help_subcommand_completion)"
