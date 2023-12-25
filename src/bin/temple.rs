@@ -1,44 +1,49 @@
+use anyhow::Result;
 use clap::Parser;
-use temple::*;
+use std::{process::ExitCode, str::FromStr};
+use temple::{
+    args::{Args, Commands},
+    config::TempleDirs,
+    values::Values,
+};
 
-fn main() {
-    let args = Args::parse();
-    let temple_files = ConfigFiles::get();
+fn app(args: &Args) -> Result<()> {
+    let temple_dirs = TempleDirs::default_paths()?;
 
     let result = match args.command {
-        Commands::New {
-            template_name,
-            project_name,
-            cli_keys,
-            local,
-            in_place,
-            overwrite,
-        } => create_project_from_template(
-            template_name.trim_start_matches("local:"),
-            &project_name,
-            &cli_keys,
-            temple_files,
-            local || template_name.starts_with("local:"),
-            in_place,
-            overwrite,
-        ),
-        Commands::List {
-            short,
-            path,
-            errors,
-        } => temple_files.list_available_templates(!short, path, !errors),
-        Commands::Init => temple_files.init_temple_config_files(),
-        Commands::ListArgs {
-            template_name,
-            local,
-        } => get_template_keys(
-            template_name.trim_start_matches("local:"),
-            local || template_name.starts_with("local:"),
-            temple_files,
-        ),
+        Commands::List { .. } => temple_dirs.display_available_templates(&args.command),
+        Commands::Init => {
+            temple_dirs.create_global_dir()?;
+            temple_dirs.create_global_config()
+        }
+        Commands::DebugConfig { ref path } => {
+            let contents = std::fs::read_to_string(path)?;
+
+            let values = Values::from_str(&contents)?;
+            println!("{:?}", values);
+
+            values.verify_types()
+        }
+        _ => unimplemented!(),
     };
 
     if let Err(msg) = result {
         println!("{msg}")
+    }
+
+    Ok(())
+}
+
+fn main() -> ExitCode {
+    let args = Args::parse();
+
+    match app(&args) {
+        Ok(()) => ExitCode::SUCCESS,
+        Err(e) => {
+            if !args.errors() {
+                eprintln!("Error: {e}");
+            }
+            ExitCode::FAILURE
+        }
     }
 }

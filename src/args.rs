@@ -1,3 +1,5 @@
+use std::path::PathBuf;
+
 pub use clap::{Parser, Subcommand};
 
 #[derive(Parser)]
@@ -5,6 +7,16 @@ pub use clap::{Parser, Subcommand};
 pub struct Args {
     #[clap(subcommand)]
     pub command: Commands,
+}
+
+impl Args {
+    #[must_use]
+    pub fn errors(&self) -> bool {
+        match self.command {
+            Commands::List { errors, .. } => !errors,
+            Commands::Init | Commands::New { .. } | Commands::DebugConfig { .. } => true,
+        }
+    }
 }
 
 #[derive(Subcommand, Debug)]
@@ -41,18 +53,15 @@ pub enum Commands {
         /// Show templates path
         #[clap(long, short)]
         path: bool,
-        /// Show templates path
+        /// Don't show error messages
         #[clap(long, short)]
         errors: bool,
     },
-    /// List required arguments for the given template
-    ListArgs {
-        /// Name of the template
-        template_name: String,
-        /// Prefer local (./.temple/template_name) if available [default: prefer ~/.temple/template_name]
-        #[clap(long, short)]
-        local: bool,
+    /// Parse and dump objects to stdout
+    DebugConfig {
+        /// The path to the configuration file
+        path: PathBuf,
     },
-    /// Initialize template directory at ~/.
+    /// Initialize temple configuration directory
     Init,
 }
