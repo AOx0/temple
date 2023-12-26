@@ -4,7 +4,7 @@ use std::process::ExitCode;
 use temple::{
     args::{Args, Commands},
     config::TempleDirs,
-    error, trace,
+    error, info, trace,
     values::Values,
 };
 
@@ -15,7 +15,23 @@ fn app(args: &Args) -> Result<()> {
         Commands::List { .. } => temple_dirs.display_available_templates(&args.command),
         Commands::Init => {
             temple_dirs.create_global_dir()?;
-            temple_dirs.create_global_config()
+            temple_dirs
+                .create_global_config()?
+                .map(|mut f| {
+                    use std::io::Write;
+
+                    info!("Writing default configuration to global configuration file");
+
+                    writeln!(
+                        f,
+                        r#"temple_delimiters: {{ open: String, close: String }} = {{
+    open: "{{{{",
+    close: "}}}}"
+}}"#
+                    )
+                    .map_err(|e| e.into())
+                })
+                .unwrap_or(Ok(()))
         }
         Commands::DebugConfig { ref path } => {
             trace!("Reading: {}", path.display());

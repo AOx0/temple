@@ -34,7 +34,7 @@ macro_rules! info {
 
             println!(
                 "{}: {}",
-                "error".if_supports_color(owo_colors::Stream::Stdout, |s| s
+                "info".if_supports_color(owo_colors::Stream::Stdout, |s| s
                         .style(owo_colors::Style::new().bold().green())),
                 format_args!($($arg)*)
             );

@@ -50,7 +50,9 @@ impl TempleDirs {
     /// # Errors
     ///
     /// This function will return an error if the global config directory does not exist or any IO error occurs
-    pub fn create_global_config(&self) -> anyhow::Result<()> {
+    pub fn create_global_config(&self) -> anyhow::Result<Option<std::fs::File>> {
+        crate::trace!("Checking if global config exists");
+
         let dir_exists = self.global_config().exists() && self.global_config().is_dir();
 
         ensure!(
@@ -61,7 +63,7 @@ impl TempleDirs {
             )
         );
 
-        let config_file = self.global_config().join("temple.conf");
+        let config_file = self.global_config().join("config.tpl");
         let exists = config_file.exists();
 
         if exists && config_file.is_file() {
@@ -70,7 +72,7 @@ impl TempleDirs {
                 config_file.display()
             );
 
-            return Ok(());
+            return Ok(None);
         } else if exists {
             warn!(
                 "The global config file at path {} exists but is not a file. Removing existing path.",
@@ -80,11 +82,17 @@ impl TempleDirs {
             Self::remove_path(&config_file)?;
         }
 
-        std::fs::OpenOptions::new()
-            .create_new(true)
-            .open(config_file)?;
+        crate::info!(
+            "Creating global configuration file at {}",
+            config_file.display()
+        );
 
-        Ok(())
+        Ok(Some(
+            std::fs::OpenOptions::new()
+                .write(true)
+                .create_new(true)
+                .open(config_file)?,
+        ))
     }
 
     /// Creates the global directory.
@@ -93,6 +101,8 @@ impl TempleDirs {
     ///
     /// This function will return an error if any IO error occurs
     pub fn create_global_dir(&self) -> anyhow::Result<()> {
+        crate::trace!("Checking if global directory exists");
+
         let exists = self.global_config().exists();
 
         if exists && self.global_config().is_dir() {
@@ -110,6 +120,11 @@ impl TempleDirs {
 
             Self::remove_path(self.global_config())?;
         }
+
+        crate::info!(
+            "Creating global directory {}",
+            self.global_config().display()
+        );
 
         std::fs::create_dir_all(self.global_config())?;
 
