@@ -1,8 +1,103 @@
 pub use logos::Logos;
+use logos::Span;
+
+use crate::values::{get_line, line_col};
+
+#[derive(Debug, Default)]
+pub struct Tokens<'i> {
+    pub inp: &'i str,
+    pub path: String,
+    pub span: Vec<Span>,
+    pub token: Vec<TokenE<'i>>,
+    pub cursor: usize,
+}
+
+pub struct Token<'i> {
+    pub token: TokenE<'i>,
+    pub span: Span,
+}
+
+pub struct TokenPeek<'re, 'i> {
+    pub token: &'re TokenE<'i>,
+    pub span: &'re Span,
+}
+
+impl Tokens<'_> {
+    #[allow(clippy::field_reassign_with_default)]
+    pub fn new(inp: &str, path: impl Into<String>) -> Tokens<'_> {
+        let mut res = Tokens::default();
+        res.inp = inp;
+        res.path = path.into();
+        res
+    }
+
+    pub fn error_current_span(&self, msg: impl Into<String>) -> String {
+        if self.is_empty() {
+            String::new()
+        } else {
+            let location = line_col(self.inp, self.span[self.cursor].clone());
+            format!(
+                "{msg}\n    {path}:{line}:{start} {contents}",
+                msg = msg.into(),
+                path = self.path,
+                line = location.1,
+                start = location.0.start,
+                contents = get_line(self.inp, location.1)
+            )
+        }
+    }
+
+    pub fn steps(&mut self, steps: usize) {
+        self.cursor += steps;
+    }
+
+    pub fn step(&mut self) {
+        self.steps(1);
+    }
+
+    pub fn skiping(&mut self, steps: usize) -> &mut Self {
+        self.steps(steps);
+        self
+    }
+
+    pub fn get_ident(&self) -> Option<String> {
+        if let &TokenE::Ident(s) = self.peek().token {
+            Some(s.to_string())
+        } else {
+            None
+        }
+    }
+
+    pub fn tokens(&self) -> &[TokenE<'_>] {
+        &self.token[self.cursor..]
+    }
+
+    pub fn try_first(&self) -> Option<Token<'_>> {
+        (!self.is_empty()).then(|| Token {
+            token: self.token[self.cursor],
+            span: self.span[self.cursor].clone(),
+        })
+    }
+
+    pub fn try_span(&self) -> Option<Span> {
+        (!self.is_empty()).then(|| self.span[self.cursor].clone())
+    }
+
+    pub fn peek(&self) -> TokenPeek<'_, '_> {
+        TokenPeek {
+            token: &self.token[self.cursor],
+            span: &self.span[self.cursor],
+        }
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.cursor == self.span.len()
+    }
+}
 
 #[derive(Logos, Debug, PartialEq, Clone, Copy)]
 #[logos(skip r"[ \t\n\f]+")]
-pub enum Token<'i> {
+pub enum TokenE<'i> {
     #[regex("[+-]?[0-9]*[.][0-9]*", |lex| format!("{num}0", num = lex.slice()).parse().ok())]
     FNumber(f64),
 
@@ -63,46 +158,46 @@ pub enum Token<'i> {
     #[regex(r#"(?i:any)"#)]
     KwAny,
 
-    #[regex("(?i:[a-z][a-z0-9]*)")]
+    #[regex("(?i:[a-z][_a-z0-9]*)")]
     Ident(&'i str),
 }
 
-impl Token<'_> {
+impl TokenE<'_> {
     pub fn is_expr_decl(&self) -> bool {
         matches!(
             self,
-            Token::String(_)
-                | Token::UNumber(_)
-                | Token::SNumber(_)
-                | Token::SqOpen
-                | Token::CyOpen
+            TokenE::String(_)
+                | TokenE::UNumber(_)
+                | TokenE::SNumber(_)
+                | TokenE::SqOpen
+                | TokenE::CyOpen
         )
     }
 
     pub fn is_type_decl(&self) -> bool {
         matches!(
             self,
-            Token::KwNumber
-                | Token::KwString
-                | Token::KwArray
-                | Token::KwObject
-                | Token::KwBool
-                | Token::KwAny
+            TokenE::KwNumber
+                | TokenE::KwString
+                | TokenE::KwArray
+                | TokenE::KwObject
+                | TokenE::KwBool
+                | TokenE::KwAny
         )
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{Logos, Token};
+    use super::{Logos, TokenE};
 
     #[test]
     fn tokenize() {
-        use Token::*;
+        use TokenE::*;
 
         let inp = "edades = [ 1, 2, 3, ]\nnombre = \"Daniel\"edad = 2";
 
-        let tokens = Token::lexer(inp);
+        let tokens = TokenE::lexer(inp);
         let tokens = tokens
             .into_iter()
             .map(std::result::Result::unwrap)

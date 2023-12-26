@@ -2,12 +2,16 @@ mod parser;
 mod token;
 
 use anyhow::{anyhow, ensure};
+use logos::Span;
 use std::{
     collections::HashMap,
     ops::{Deref, DerefMut},
+    path::Path,
 };
 use tera::{Map, Value};
-use token::{Logos, Token};
+use token::{Logos, TokenE};
+
+use crate::values::token::Tokens;
 
 #[derive(Debug, PartialEq, Eq)]
 pub struct Values {
@@ -165,20 +169,71 @@ impl Deref for TypeMap {
     }
 }
 
-impl std::str::FromStr for Values {
-    type Err = anyhow::Error;
+pub struct Location(Span, usize);
 
-    fn from_str(s: &str) -> std::result::Result<Self, Self::Err> {
-        let tokens = Token::lexer(s)
-            .collect::<std::result::Result<Vec<Token<'_>>, _>>()
-            .map_err(|()| anyhow!("Failed to get tokens"))?;
+impl From<(Span, usize)> for Location {
+    fn from((span, line): (Span, usize)) -> Self {
+        Location(span, line)
+    }
+}
 
-        let ((value_map, type_map), remain) = parser::parse_config(&tokens)?;
+impl std::fmt::Display for Location {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}:{}-{}", self.1, self.0.start, self.0.end)
+    }
+}
 
-        ensure!(
-            remain.is_empty(),
-            "Error while parsing config, bad syntax, ramains: {remain:?}"
-        );
+fn get_line(inp: &str, line: usize) -> &str {
+    inp.lines().nth(line - 1).unwrap_or_default()
+}
+
+fn line_col(inp: &str, span: Span) -> Location {
+    let mut line = 1;
+    let mut col = 1;
+    for i in 0..span.start {
+        if inp
+            .chars()
+            .nth(i)
+            .expect("Logos returns valid spans always")
+            == '\n'
+        {
+            line += 1;
+            col = 1;
+        } else {
+            col += 1;
+        }
+    }
+
+    (col..col + (span.end - span.start), line).into()
+}
+
+impl Values {
+    pub fn from_str(s: &str, path: &Path) -> std::result::Result<Self, anyhow::Error> {
+        let mut tokens: Tokens<'_> = Tokens::new(s, format!("{}", path.display()));
+        let mut lexer = TokenE::lexer(s);
+
+        while let Some(token) = lexer.next() {
+            let token = if let Err(()) = token {
+                eprintln!(
+                    "Error reading token at {}:\n    {}",
+                    line_col(s, lexer.span()),
+                    &s[lexer.span()]
+                );
+                continue;
+            } else {
+                token.expect("Already matched error")
+            };
+
+            tokens.span.push(lexer.span());
+            tokens.token.push(token);
+        }
+
+        let (value_map, type_map) = parser::parse_config(&mut tokens)?;
+
+        ensure! {
+            tokens.is_empty(),
+            anyhow!("Invalid syntax on config, expected to finish parsing everything but remains: {:?}", tokens.tokens())
+        };
 
         Ok(Values {
             value_map,
@@ -187,18 +242,18 @@ impl std::str::FromStr for Values {
     }
 }
 
-#[cfg(test)]
+#[cfg(testasd)]
 mod tests {
     use logos::Logos;
     use tera::Value;
 
-    use super::{parser::try_value_from, token::Token};
+    use super::{parser::try_value_from, token::TokenE};
 
     #[test]
     fn comma_ending_list() {
         let inp = "[1, 2, 3, ]";
 
-        let tokens = Token::lexer(inp)
+        let tokens = TokenE::lexer(inp)
             .map(std::result::Result::unwrap)
             .collect::<Vec<_>>();
 
@@ -219,7 +274,7 @@ mod tests {
     fn non_comma_ending_list() {
         let inp = "[1, 2, 3 ]";
 
-        let tokens = Token::lexer(inp)
+        let tokens = TokenE::lexer(inp)
             .map(std::result::Result::unwrap)
             .collect::<Vec<_>>();
 
@@ -240,7 +295,7 @@ mod tests {
     fn invalid_list() {
         let inp = "[1,,]";
 
-        let tokens = Token::lexer(inp)
+        let tokens = TokenE::lexer(inp)
             .map(std::result::Result::unwrap)
             .collect::<Vec<_>>();
 

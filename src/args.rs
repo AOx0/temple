@@ -11,10 +11,10 @@ pub struct Args {
 
 impl Args {
     #[must_use]
-    pub fn errors(&self) -> bool {
+    pub fn no_errors(&self) -> bool {
         match self.command {
             Commands::List { errors, .. } => !errors,
-            Commands::Init | Commands::New { .. } | Commands::DebugConfig { .. } => true,
+            Commands::Init | Commands::New { .. } | Commands::DebugConfig { .. } => false,
         }
     }
 }

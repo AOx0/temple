@@ -5,239 +5,307 @@ use tera::{Map, Number, Value};
 
 use crate::values::{Type, TypeMap, ValueMap};
 
-use super::token::Token;
+use super::token::{TokenE, Tokens};
 
-pub fn try_value_from<'a>(
-    tokens: &'a [Token<'a>],
-) -> Result<(Value, &'a [Token<'a>]), anyhow::Error> {
-    match tokens {
-        &[Token::String(s), ..] => Ok((Value::String(s.to_string()), &tokens[1..])),
-        &[Token::UNumber(v), ..] => Ok((Value::Number(v.into()), &tokens[1..])),
-        &[Token::SNumber(v), ..] => Ok((Value::Number(v.into()), &tokens[1..])),
-        &[Token::FNumber(v), ..] => Ok((
-            Value::Number(Number::from_f64(v).context("Invalid float value")?),
-            &tokens[1..],
-        )),
-        [Token::SqOpen, ..] => parse_list(tokens),
-        [Token::CyOpen, ..] => parse_object(tokens),
-        _ => unimplemented!(),
+pub fn try_value_from(tokens: &mut Tokens<'_>) -> Result<Value, anyhow::Error> {
+    match tokens
+        .try_first()
+        .context("Premature ending, expetced Value")?
+        .token
+    {
+        TokenE::String(s) => {
+            let s = s.to_string();
+            tokens.step();
+            Ok(Value::String(s))
+        }
+        TokenE::UNumber(v) => {
+            tokens.step();
+            Ok(Value::Number(v.into()))
+        }
+        TokenE::SNumber(v) => {
+            tokens.step();
+            Ok(Value::Number(v.into()))
+        }
+        TokenE::FNumber(v) => {
+            tokens.step();
+            Ok(Value::Number(
+                Number::from_f64(v).context("Invalid float value")?,
+            ))
+        }
+        TokenE::SqOpen => parse_list(tokens),
+        TokenE::CyOpen => parse_object(tokens),
+        _ => bail!(tokens.error_current_span(format!(
+            "Found unexpected token {:?} while trying to parse value",
+            tokens.try_first().map(|t| t.token)
+        )),),
     }
 }
 
-pub fn try_type_from<'a>(
-    tokens: &'a [Token<'a>],
-) -> Result<(Type, &'a [Token<'a>]), anyhow::Error> {
-    match tokens {
-        [Token::KwAny, ..] => Ok((Type::Any, &tokens[1..])),
-        [Token::KwNumber, ..] => Ok((Type::Number, &tokens[1..])),
-        [Token::KwString, ..] => Ok((Type::String, &tokens[1..])),
-        [Token::KwBool, ..] => Ok((Type::Bool, &tokens[1..])),
-        [Token::KwArray, ..] => parse_array_type(tokens),
-        [Token::KwObject, ..] => parse_object_type(tokens),
-        _ => unimplemented!(),
+pub fn try_type_from(tokens: &mut Tokens<'_>) -> Result<Type, anyhow::Error> {
+    match tokens.tokens() {
+        [TokenE::KwAny, ..] => {
+            tokens.step();
+            Ok(Type::Any)
+        }
+        [TokenE::KwNumber, ..] => {
+            tokens.step();
+            Ok(Type::Number)
+        }
+        [TokenE::KwString, ..] => {
+            tokens.step();
+            Ok(Type::String)
+        }
+        [TokenE::KwBool, ..] => {
+            tokens.step();
+            Ok(Type::Bool)
+        }
+        [TokenE::KwArray, ..] => parse_array_type(tokens.skiping(1)),
+        [TokenE::KwObject, ..] => parse_object_type(tokens.skiping(1)),
+        [TokenE::SqOpen, ..] => parse_array_type(tokens),
+        [TokenE::CyOpen, ..] => parse_object_type(tokens),
+        _ => bail!(tokens.error_current_span(format!(
+            "Found unexpected token {:?} while trying to parse data type",
+            tokens.try_first().map(|t| t.token)
+        )),),
     }
 }
 
-pub fn parse_object_type<'a>(
-    token: &'a [Token<'a>],
-) -> Result<(Type, &'a [Token<'a>]), anyhow::Error> {
-    if let [Token::KwObject, Token::CyOpen, ..] = token {
-        let mut remain = &token[2..];
+pub fn parse_object_type(tokens: &mut Tokens<'_>) -> Result<Type, anyhow::Error> {
+    if matches!(tokens.peek().token, TokenE::CyOpen) {
+        tokens.step();
 
-        if let &[Token::CyClose, ..] = remain {
-            Ok((Type::Object(HashMap::new()), &remain[1..]))
+        if let &[TokenE::CyClose, ..] = tokens.tokens() {
+            tokens.step();
+            Ok(Type::Object(HashMap::new()))
         } else {
             let mut res = HashMap::new();
 
-            while let &[Token::Ident(ident), Token::EqD, ..] = remain {
-                remain = &remain[2..];
+            while matches!(tokens.tokens(), [TokenE::Ident(_), TokenE::EqD, ..]) {
+                let ident = tokens.get_ident().expect("Just matched");
+                let value = try_type_from(tokens.skiping(2))?;
 
-                let (value, r) = try_type_from(remain)?;
+                res.insert(ident.to_string(), value).is_some().then(|| {
+                    println!(
+                        "{}",
+                        tokens.error_current_span(format!(
+                            "Warn: Ident `{ident}` is already defined, overriding"
+                        )),
+                    );
+                });
 
-                res.insert(ident.to_string(), value)
-                    .is_some()
-                    .then(|| println!("Warn: Ident `{ident}` is already defined, overriding"));
-
-                remain = r;
-
-                if let [Token::Comma, ..] = remain {
-                    remain = &remain[1..];
+                if let [TokenE::Comma, ..] = tokens.tokens() {
+                    tokens.step();
                 }
             }
 
-            ensure! {
-                matches!(remain, [Token::CyClose, ..]),
-                "Warn: Invalid syntax on object declaration, remains: {remain:?}"
-            };
+            ensure!(
+                tokens.peek().token == &TokenE::CyClose,
+                anyhow!(tokens.error_current_span(format!(
+                    "Expected closing '}}' in Object type declaration but found {:?}",
+                    tokens.peek().token
+                )),)
+            );
 
-            Ok((Type::Object(res), &remain[1..]))
+            tokens.step();
+            Ok(Type::Object(res))
         }
     } else {
-        Err(anyhow!("Token is not an object type declaration"))
+        Err(anyhow!(tokens.error_current_span(
+            "Token is not an object type declaration",
+        ),))
     }
 }
 
-pub fn parse_array_type<'a>(
-    token: &'a [Token<'a>],
-) -> Result<(Type, &'a [Token<'a>]), anyhow::Error> {
-    if let [Token::KwArray, Token::SqOpen, ..] = token {
-        let mut remains = &token[2..];
+pub fn parse_array_type(tokens: &mut Tokens<'_>) -> Result<Type, anyhow::Error> {
+    if let [TokenE::SqOpen, ..] = tokens.tokens() {
+        tokens.step();
 
-        let (typ, rem) = try_type_from(remains)?;
-
-        remains = rem;
+        let typ = try_type_from(tokens)?;
 
         ensure!(
-            remains.last().context("Invalid syntax")? == &Token::SqClose,
-            "Invalid syntax"
+            tokens.peek().token == &TokenE::SqClose,
+            anyhow!(tokens
+                .error_current_span("Expected ']' after type {typ} in Array type declaration"))
         );
 
-        Ok((typ, &remains[1..]))
+        tokens.step();
+        Ok(Type::Array(Box::new(typ)))
     } else {
-        Err(anyhow!("Token is not an array type declaration"))
+        Err(anyhow!(tokens.error_current_span(
+            "Expected '[' before type Array type declaration",
+        ),))
     }
 }
 
-pub fn parse_config<'a>(
-    token: &'a [Token<'a>],
-) -> Result<((ValueMap, TypeMap), &'a [Token<'a>]), anyhow::Error> {
-    let mut remain = token;
+pub fn parse_config(tokens: &mut Tokens<'_>) -> Result<(ValueMap, TypeMap), anyhow::Error> {
     let mut values = ValueMap::default();
     let mut types = TypeMap::default();
 
-    while !remain.is_empty() {
-        match remain {
-            &[Token::Ident(ident), Token::Eq | Token::EqD, ..] => {
-                remain = &remain[1..];
+    while !tokens.is_empty() {
+        match tokens.tokens() {
+            [TokenE::Ident(_), TokenE::Eq | TokenE::EqD, ..] => {
+                let ident = tokens.get_ident().expect("Just matched it");
+                tokens.step();
 
                 // Parse optional data type
-                let typ = if matches!(remain, [Token::EqD, token, ..] if token.is_type_decl()) {
-                    let (typ, r) = try_type_from(&remain[1..])?;
+                let typ = if matches!(tokens.tokens(), [TokenE::EqD, token, ..] if token.is_type_decl())
+                {
+                    tokens.step();
+                    let typ = try_type_from(tokens)?;
                     types.insert(ident.to_string(), typ);
-                    remain = r;
-                    Some(types.get(ident).expect("just pushed the value"))
+
+                    Some(types.get(ident.as_str()).expect("just pushed the value"))
                 } else {
                     types.insert(ident.to_string(), Type::Any);
                     None
                 };
 
-                if let [Token::Eq, ..] = remain {
-                    let (value, r) = try_value_from(&remain[1..])?;
+                if let [TokenE::Eq, ..] = tokens.tokens() {
+                    let value = try_value_from(tokens.skiping(1))?;
 
-                    values
-                        .insert(ident.to_string(), value)
-                        .is_some()
-                        .then(|| println!("Warn: Ident `{ident}` is already defined, overriding"));
-
-                    remain = r;
+                    values.insert(ident.to_string(), value).is_some().then(|| {
+                        println!(
+                            "{}",
+                            tokens.error_current_span(format!(
+                                "Warn: Ident `{ident}` is already defined, overriding",
+                            )),
+                        );
+                    });
                 } else {
                     values
                         .insert(ident.to_string(), Value::Null)
                         .is_some()
-                        .then(|| println!("Warn: Ident `{ident}` is already defined, overriding"));
+                        .then(|| {
+                            println!(
+                                "{}",
+                                tokens.error_current_span(format!(
+                                    "Warn: Ident `{ident}` is already defined, overriding",
+                                )),
+                            );
+                        });
 
                     if typ.is_none() {
-                        println!("Warn: We advise to state a data type for empty values");
+                        println!(
+                            "{}",
+                            tokens.error_current_span(format!(
+                                "Warn: We advise to state a data type for empty values",
+                            )),
+                        );
                     }
                 }
 
-                if let [Token::Comma | Token::Semicolon, ..] = remain {
-                    remain = &remain[1..];
+                if let [TokenE::Comma | TokenE::Semicolon, ..] = tokens.tokens() {
+                    tokens.step();
                 }
             }
+            &[token, ..] => {
+                bail!(tokens.error_current_span(format!("Found unexpected token {:?}", token)),)
+            }
             _ => {
-                bail!("Invalid syntax, remains: {remain:?}")
+                bail!(tokens.error_current_span("Expected token, found nothing",),)
             }
         }
     }
 
     ensure! {
-        remain.is_empty(),
-        "Warn: Invalid syntax on config, remains: {remain:?}"
+        tokens.is_empty(),
+        anyhow!(
+            tokens.error_current_span(
+                format!("Invalid syntax on config, expected to finish parsing everything but remains: {:?}",
+                    tokens.tokens()
+                )
+            )
+        ),
     };
 
-    Ok(((values, types), &remain))
+    Ok((values, types))
 }
 
-pub fn parse_object<'a>(token: &'a [Token<'a>]) -> Result<(Value, &'a [Token<'a>]), anyhow::Error> {
-    if let [Token::CyOpen, ..] = token {
-        let mut remain = &token[1..];
+pub fn parse_object(tokens: &mut Tokens<'_>) -> Result<Value, anyhow::Error> {
+    if let [TokenE::CyOpen, ..] = tokens.tokens() {
+        tokens.step();
 
-        if let &[Token::CyClose, ..] = remain {
-            Ok((Value::Object(Map::new()), &remain[1..]))
+        if let &[TokenE::CyClose, ..] = tokens.tokens() {
+            tokens.step();
+            Ok(Value::Object(Map::new()))
         } else {
             let mut res = Map::new();
 
-            while let &[Token::Ident(ident), Token::Eq | Token::EqD, ..] = remain {
-                remain = &remain[2..];
-
-                let (value, r) = try_value_from(remain)?;
+            while let &[TokenE::Ident(_), TokenE::Eq | TokenE::EqD, ..] = tokens.tokens() {
+                let ident = tokens.get_ident().expect("Just matched");
+                let value = try_value_from(tokens.skiping(2))?;
 
                 res.insert(ident.to_string(), value)
                     .is_some()
                     .then(|| println!("Warn: Ident `{ident}` is already defined, overriding"));
 
-                remain = r;
-
-                if let [Token::Comma, ..] = remain {
-                    remain = &remain[1..];
+                if let [TokenE::Comma, ..] = tokens.tokens() {
+                    tokens.step();
                 }
             }
 
-            ensure! {
-                matches!(remain, [Token::CyClose, ..]),
-                "Warn: Invalid syntax on object declaration, remains: {remain:?}"
-            };
+            ensure!(
+                tokens.peek().token == &TokenE::CyClose,
+                anyhow!(tokens.error_current_span(format!(
+                    "Expected closing '}}' in Object declaration but found {:?}",
+                    tokens.peek().token
+                )),)
+            );
 
-            Ok((Value::Object(res), &remain[1..]))
+            tokens.step();
+
+            Ok(Value::Object(res))
         }
     } else {
-        Err(anyhow!("Token is not an object declaration"))
+        Err(anyhow!(
+            tokens.error_current_span("Token is not an object declaration",),
+        ))
     }
 }
 
-fn parse_list<'a>(token: &'a [Token<'a>]) -> Result<(Value, &'a [Token<'a>]), anyhow::Error> {
-    if let &[Token::SqOpen, ..] = token {
-        let mut rem = &token[1..];
+fn parse_list(tokens: &mut Tokens<'_>) -> Result<Value, anyhow::Error> {
+    if let &[TokenE::SqOpen, ..] = tokens.tokens() {
+        tokens.step();
 
-        if !rem.contains(&Token::SqClose) {
-            bail!("Open list is not closed")
+        if !tokens.tokens().contains(&TokenE::SqClose) {
+            bail!(tokens.error_current_span("Array not closed",),)
         }
 
-        if let &[Token::SqClose, ..] = rem {
-            Ok((Value::Array(Vec::new()), &rem[1..]))
+        if let &[TokenE::SqClose, ..] = tokens.tokens() {
+            tokens.step();
+            Ok(Value::Array(Vec::new()))
         } else {
             let mut list = Vec::new();
 
-            while let [next, ..] = rem {
-                match (next.is_expr_decl(), rem) {
+            while let [next, ..] = tokens.tokens() {
+                match (next.is_expr_decl(), tokens.tokens()) {
                     (true, _) => {
-                        let (value, r) = try_value_from(rem)?;
+                        let value = try_value_from(tokens)?;
                         list.push(value);
-                        rem = r;
                     }
-                    (false, [Token::Comma, Token::Comma, ..]) => {
-                        bail!("There must be a value between commas")
+                    (false, [TokenE::Comma, TokenE::Comma, ..]) => {
+                        bail!(tokens.error_current_span("There must be a value between commas",),)
                     }
-                    (false, [Token::SqClose, ..]) => {
-                        rem = &rem[1..];
+                    (false, [TokenE::SqClose, ..]) => {
+                        tokens.step();
                         break;
                     }
-                    (false, [Token::Comma, ..]) => rem = &rem[1..],
+                    (false, [TokenE::Comma, ..]) => tokens.step(),
                     (false, [token, ..]) => {
-                        bail!("Invalid token in list: `{token:?}`")
+                        bail!(tokens
+                            .error_current_span(format!("Invalid token in list: `{token:?}`",)),)
                     }
                     _ => unreachable!("We did check the list is not empty"),
                 }
             }
 
-            if let Some(Token::Comma) = rem.first() {
-                rem = &rem[1..];
+            if let Some(TokenE::Comma) = tokens.try_first().map(|e| e.token) {
+                tokens.step();
             }
 
-            Ok((Value::Array(list), rem))
+            Ok(Value::Array(list))
         }
     } else {
-        Err(anyhow!("Token is not a list"))
+        Err(anyhow!(tokens.error_current_span("Token is not a list",),))
     }
 }

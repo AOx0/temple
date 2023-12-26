@@ -17,9 +17,11 @@ fn app(args: &Args) -> Result<()> {
             temple_dirs.create_global_config()
         }
         Commands::DebugConfig { ref path } => {
+            println!("Reading: {}", path.display());
+
             let contents = std::fs::read_to_string(path)?;
 
-            let values = Values::from_str(&contents)?;
+            let values = Values::from_str(&contents, path)?;
             println!("{:?}", values);
 
             values.verify_types()
@@ -40,7 +42,7 @@ fn main() -> ExitCode {
     match app(&args) {
         Ok(()) => ExitCode::SUCCESS,
         Err(e) => {
-            if !args.errors() {
+            if !args.no_errors() {
                 eprintln!("Error: {e}");
             }
             ExitCode::FAILURE
