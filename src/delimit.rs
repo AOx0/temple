@@ -31,6 +31,8 @@ impl Delimiters<'_> {
 }
 
 impl<'a> Delimiters<'a> {
+    // TODO: Remove dead_code
+    #[allow(dead_code)]
     fn new(open: &'a str, close: &'a str) -> anyhow::Result<Self> {
         ensure!(
             open.len() >= 2,

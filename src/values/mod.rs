@@ -2,17 +2,15 @@ mod parser;
 mod token;
 
 use anyhow::{anyhow, ensure};
-use logos::Span;
-use owo_colors::OwoColorize;
 use std::{
     collections::HashMap,
     ops::{Deref, DerefMut},
     path::Path,
 };
 use tera::{Map, Value};
-use token::{Logos, TokenE};
+use token::{Logos, Variant};
 
-use crate::values::token::{MessageType, Tokens};
+use crate::values::token::Tokens;
 
 #[derive(Debug, PartialEq, Eq)]
 pub struct Values {
@@ -130,10 +128,8 @@ impl Values {
             let val_type = Type::from(v);
 
             if !decl_type.is_equivalent(&val_type) {
-                eprintln!(
-                    "{}: Data type for value {k:?} of type {decl_type:?} does not conform to the defined value {v:?} of type {val_type:?}",
-                    "error".if_supports_color(owo_colors::Stream::Stdout, |s| s
-                        .style(owo_colors::Style::new().bold().red()))
+                crate::error!(
+                    "Data type for value {k:?} of type {decl_type:?} does not conform to the defined value {v:?} of type {val_type:?}",
                 );
 
                 res = Err(anyhow!("Invalid configuration values/types"));
@@ -172,80 +168,21 @@ impl Deref for TypeMap {
     }
 }
 
-pub struct Location(Span, usize);
-
-impl From<(Span, usize)> for Location {
-    fn from((span, line): (Span, usize)) -> Self {
-        Location(span, line)
-    }
-}
-
-impl std::fmt::Display for Location {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}:{}-{}", self.1, self.0.start, self.0.end)
-    }
-}
-
-fn get_line(inp: &str, line: usize) -> &str {
-    inp.lines().nth(line - 1).unwrap_or_default()
-}
-
-fn line_col(inp: &str, span: Span) -> Location {
-    let mut line = 1;
-    let mut col = 1;
-    for i in 0..span.start {
-        if inp
-            .chars()
-            .nth(i)
-            .expect("Logos returns valid spans always")
-            == '\n'
-        {
-            line += 1;
-            col = 1;
-        } else {
-            col += 1;
-        }
-    }
-
-    (col..col + (span.end - span.start), line).into()
-}
-
 impl Values {
     pub fn from_str(s: &str, path: &Path) -> std::result::Result<Self, anyhow::Error> {
         let mut tokens: Tokens<'_> = Tokens::new(s, format!("{}", path.display()));
-        let mut lexer = TokenE::lexer(s);
+        let mut lexer = Variant::lexer(s);
 
         while let Some(token) = lexer.next() {
             let token = if let Err(()) = token {
-                eprintln!(
-                    "{}",
-                    tokens.error_current_span(MessageType::Error, "Error reading token")
-                );
+                crate::error!(tokens.error_current_span("Error reading token"));
                 continue;
             } else {
                 token.expect("Already matched error")
             };
 
-            /*
-            if let TokenE::Unknow(matched) = token {
-                eprintln!(
-                    "{}",
-                    tokens.error_current_span(
-                        MessageType::Error,
-                        format!("Matched unknown token {matched}")
-                    )
-                );
-                continue;
-            } else
-            */
-            if let TokenE::Comment(text) = token {
-                if std::env::var("TEMPLE_INFO").is_ok() || std::env::var("TEMPLE_TRACE").is_ok() {
-                    println!(
-                        "{}: Skipping comment '{text}'",
-                        "tracing".if_supports_color(owo_colors::Stream::Stdout, |s| s
-                            .style(owo_colors::Style::new().bold().bright_black()))
-                    );
-                }
+            if let Variant::Comment(text) = token {
+                crate::trace!("Skipping comment '{text}'",);
                 continue;
             }
             tokens.span.push(lexer.span());
@@ -256,79 +193,12 @@ impl Values {
 
         ensure! {
             tokens.is_empty(),
-            anyhow!(tokens.error_current_span(MessageType::Error, format!("Invalid syntax on config, expected to finish parsing everything but remains: {:?}", tokens.tokens())))
+            anyhow!(tokens.error_current_span(format!("Invalid syntax on config, expected to finish parsing everything but remains: {:?}", tokens.tokens())))
         };
 
         Ok(Values {
             value_map,
             type_map,
         })
-    }
-}
-
-#[cfg(testasd)]
-mod tests {
-    use logos::Logos;
-    use tera::Value;
-
-    use super::{parser::try_value_from, token::TokenE};
-
-    #[test]
-    fn comma_ending_list() {
-        let inp = "[1, 2, 3, ]";
-
-        let tokens = TokenE::lexer(inp)
-            .map(std::result::Result::unwrap)
-            .collect::<Vec<_>>();
-
-        assert_eq!(
-            try_value_from(tokens.as_slice()).expect("This should never fail"),
-            (
-                Value::Array(vec![
-                    Value::Number(1.into()),
-                    Value::Number(2.into()),
-                    Value::Number(3.into())
-                ]),
-                [].as_slice()
-            )
-        );
-    }
-
-    #[test]
-    fn non_comma_ending_list() {
-        let inp = "[1, 2, 3 ]";
-
-        let tokens = TokenE::lexer(inp)
-            .map(std::result::Result::unwrap)
-            .collect::<Vec<_>>();
-
-        assert_eq!(
-            try_value_from(tokens.as_slice()).expect("This should never fail"),
-            (
-                Value::Array(vec![
-                    Value::Number(1.into()),
-                    Value::Number(2.into()),
-                    Value::Number(3.into())
-                ]),
-                [].as_slice()
-            )
-        );
-    }
-
-    #[test]
-    fn invalid_list() {
-        let inp = "[1,,]";
-
-        let tokens = TokenE::lexer(inp)
-            .map(std::result::Result::unwrap)
-            .collect::<Vec<_>>();
-
-        assert_eq!(
-            try_value_from(tokens.as_slice())
-                .map_err(|e| { e.to_string() })
-                .expect_err("This should never fail")
-                .as_str(),
-            "There must be a value between commas"
-        );
     }
 }

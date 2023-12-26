@@ -3,7 +3,7 @@ use derive_builder::Builder;
 use directories::UserDirs;
 use std::path::{Path, PathBuf};
 
-use crate::args::Commands;
+use crate::{args::Commands, info, warn};
 
 #[derive(Builder)]
 pub struct TempleDirs {
@@ -65,14 +65,14 @@ impl TempleDirs {
         let exists = config_file.exists();
 
         if exists && config_file.is_file() {
-            println!(
+            info!(
                 "The global config file at path {} already exists. Skipping creation.",
                 config_file.display()
             );
 
             return Ok(());
         } else if exists {
-            println!(
+            warn!(
                 "The global config file at path {} exists but is not a file. Removing existing path.",
                 config_file.display(),
             );
@@ -96,14 +96,14 @@ impl TempleDirs {
         let exists = self.global_config().exists();
 
         if exists && self.global_config().is_dir() {
-            println!(
+            info!(
                 "The global config directory at path {} already exists. Skipping creation.",
                 self.global_config().display()
             );
 
             return Ok(());
         } else if exists {
-            println!(
+            warn!(
                 "The global config directory at path {} exists but is not a directory. Removing existing path.",
                 self.global_config().display(),
             );

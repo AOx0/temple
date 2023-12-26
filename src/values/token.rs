@@ -2,50 +2,23 @@ pub use logos::Logos;
 use logos::Span;
 use owo_colors::OwoColorize;
 
-use crate::values::{get_line, line_col};
-
 #[derive(Debug, Default)]
 pub struct Tokens<'i> {
     pub inp: &'i str,
     pub path: String,
     pub span: Vec<Span>,
-    pub token: Vec<TokenE<'i>>,
+    pub token: Vec<Variant<'i>>,
     pub cursor: usize,
 }
 
 pub struct Token<'i> {
-    pub token: TokenE<'i>,
+    pub token: Variant<'i>,
     pub span: Span,
 }
 
 pub struct Peek<'re, 'i> {
-    pub token: &'re TokenE<'i>,
+    pub token: &'re Variant<'i>,
     pub span: &'re Span,
-}
-
-#[derive(Debug, Clone, Copy)]
-pub enum MessageType {
-    Error,
-    Warning,
-}
-
-impl std::fmt::Display for MessageType {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            MessageType::Error => write!(
-                f,
-                "{}",
-                "error".if_supports_color(owo_colors::Stream::Stdout, |s| s
-                    .style(owo_colors::Style::new().bold().red()))
-            ),
-            MessageType::Warning => write!(
-                f,
-                "{}",
-                "warning".if_supports_color(owo_colors::Stream::Stdout, |s| s
-                    .style(owo_colors::Style::new().bold().yellow()))
-            ),
-        }
-    }
 }
 
 struct Underlined(Span);
@@ -69,6 +42,24 @@ impl std::fmt::Display for Underlined {
     }
 }
 
+pub struct Location(Span, usize);
+
+impl From<(Span, usize)> for Location {
+    fn from((span, line): (Span, usize)) -> Self {
+        Location(span, line)
+    }
+}
+
+impl std::fmt::Display for Location {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}:{}-{}", self.1, self.0.start, self.0.end)
+    }
+}
+
+fn get_line(inp: &str, line: usize) -> &str {
+    inp.lines().nth(line - 1).unwrap_or_default()
+}
+
 impl Tokens<'_> {
     #[allow(clippy::field_reassign_with_default)]
     pub fn new(inp: &str, path: impl Into<String>) -> Tokens<'_> {
@@ -78,14 +69,43 @@ impl Tokens<'_> {
         res
     }
 
-    pub fn error_current_span(&self, typ: MessageType, msg: impl Into<String>) -> String {
+    pub fn error_current_span(&self, msg: impl Into<String>) -> String {
+        self.error_at(self.current_location(), msg)
+    }
+
+    pub fn current_location(&self) -> Location {
+        self.location(self.cursor)
+    }
+
+    pub fn location(&self, cursor: usize) -> Location {
+        let span = self.span[cursor].clone();
+        let mut line = 1;
+        let mut col = 1;
+        for i in 0..span.start {
+            if self
+                .inp
+                .chars()
+                .nth(i)
+                .expect("Logos returns valid spans always")
+                == '\n'
+            {
+                line += 1;
+                col = 1;
+            } else {
+                col += 1;
+            }
+        }
+
+        (col..col + (span.end - span.start), line).into()
+    }
+
+    #[allow(clippy::needless_pass_by_value)]
+    pub fn error_at(&self, location: Location, msg: impl Into<String>) -> String {
         if self.is_empty() {
             String::new()
         } else {
-            let location = line_col(self.inp, self.span[self.cursor].clone());
             format!(
-                "{typ}: {msg}\n  {arrow}{path}:{line}:{start}\n{empty_pipe}\n{bline} {contents}\n{empty_pipe} {underline}\n{empty_pipe}",
-                typ = typ,
+                "{msg}\n   {arrow}{path}:{line}:{start}\n{empty_pipe}\n{bline} {contents}\n{empty_pipe} {underline}\n{empty_pipe}",
                 msg = msg.into(),
                 arrow = "--> ".if_supports_color(owo_colors::Stream::Stdout, |s| s
                     .style(owo_colors::Style::new().bold().blue())),
@@ -105,13 +125,9 @@ impl Tokens<'_> {
     }
 
     pub fn steps(&mut self, steps: usize) {
-        if std::env::var("TEMPLE_INFO").is_ok() {
+        if std::env::var("TEMPLE_TRACE").is_ok() {
             for token in &self.token[self.cursor..self.cursor + steps] {
-                println!(
-                    "{}: Shift {token} ({token:?})",
-                    "info".if_supports_color(owo_colors::Stream::Stdout, |s| s
-                        .style(owo_colors::Style::new().bold().green()))
-                );
+                crate::trace!("Shift {token} ({token:?})",);
             }
         }
         self.cursor += steps;
@@ -127,14 +143,14 @@ impl Tokens<'_> {
     }
 
     pub fn get_ident(&self) -> Option<String> {
-        if let &TokenE::Ident(s) = self.peek().token {
+        if let &Variant::Ident(s) = self.peek().token {
             Some(s.to_string())
         } else {
             None
         }
     }
 
-    pub fn tokens(&self) -> &[TokenE<'_>] {
+    pub fn tokens(&self) -> &[Variant<'_>] {
         &self.token[self.cursor..]
     }
 
@@ -159,7 +175,7 @@ impl Tokens<'_> {
 
 #[derive(Logos, Debug, PartialEq, Clone, Copy)]
 #[logos(skip r"[ \t\n\f]+")]
-pub enum TokenE<'i> {
+pub enum Variant<'i> {
     #[regex("[+-]?[0-9]*[.][0-9]*", |lex| format!("{num}0", num = lex.slice()).parse().ok())]
     FNumber(f64),
 
@@ -229,73 +245,73 @@ pub enum TokenE<'i> {
     // Unknow(&'i str),
 }
 
-impl std::fmt::Display for TokenE<'_> {
+impl std::fmt::Display for Variant<'_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            TokenE::FNumber(num) => write!(f, "{num}"),
-            TokenE::SNumber(num) => write!(f, "{num}"),
-            TokenE::UNumber(num) => write!(f, "{num}"),
-            TokenE::String(str) => write!(f, "{str:?}"),
-            TokenE::Bool(bool) => write!(f, "{bool}"),
-            TokenE::SqClose => write!(f, "']'"),
-            TokenE::SqOpen => write!(f, "'['"),
-            TokenE::CyClose => write!(f, "'}}'"),
-            TokenE::CyOpen => write!(f, "'{{'"),
-            TokenE::Comma => write!(f, "','"),
-            TokenE::Semicolon => write!(f, "';'"),
-            TokenE::Eq => write!(f, "'='"),
-            TokenE::EqD => write!(f, "':'"),
-            TokenE::KwNumber => write!(f, "Number"),
-            TokenE::KwString => write!(f, "String"),
-            TokenE::KwBool => write!(f, "Bool"),
-            TokenE::KwObject => write!(f, "Object"),
-            TokenE::KwArray => write!(f, "Array"),
-            TokenE::KwAny => write!(f, "Any"),
-            TokenE::Ident(ident) => write!(f, "{ident}"),
+            Variant::FNumber(num) => write!(f, "{num}"),
+            Variant::SNumber(num) => write!(f, "{num}"),
+            Variant::UNumber(num) => write!(f, "{num}"),
+            Variant::String(str) => write!(f, "{str:?}"),
+            Variant::Bool(bool) => write!(f, "{bool}"),
+            Variant::SqClose => write!(f, "']'"),
+            Variant::SqOpen => write!(f, "'['"),
+            Variant::CyClose => write!(f, "'}}'"),
+            Variant::CyOpen => write!(f, "'{{'"),
+            Variant::Comma => write!(f, "','"),
+            Variant::Semicolon => write!(f, "';'"),
+            Variant::Eq => write!(f, "'='"),
+            Variant::EqD => write!(f, "':'"),
+            Variant::KwNumber => write!(f, "Number"),
+            Variant::KwString => write!(f, "String"),
+            Variant::KwBool => write!(f, "Bool"),
+            Variant::KwObject => write!(f, "Object"),
+            Variant::KwArray => write!(f, "Array"),
+            Variant::KwAny => write!(f, "Any"),
+            Variant::Ident(ident) => write!(f, "{ident}"),
             // TokenE::Unknow(matched) => write!(f, "{matched}"),
-            TokenE::Comment(text) => write!(f, "# {text}"),
+            Variant::Comment(text) => write!(f, "# {text}"),
         }
     }
 }
 
-impl TokenE<'_> {
+impl Variant<'_> {
     pub fn is_expr_decl(&self) -> bool {
         matches!(
             self,
-            TokenE::String(_)
-                | TokenE::UNumber(_)
-                | TokenE::SNumber(_)
-                | TokenE::SqOpen
-                | TokenE::CyOpen
+            Variant::String(_)
+                | Variant::UNumber(_)
+                | Variant::SNumber(_)
+                | Variant::SqOpen
+                | Variant::CyOpen
         )
     }
 
     pub fn is_type_decl(&self) -> bool {
         matches!(
             self,
-            TokenE::KwNumber
-                | TokenE::KwString
-                | TokenE::KwArray
-                | TokenE::KwObject
-                | TokenE::KwBool
-                | TokenE::KwAny
-                | TokenE::SqOpen
-                | TokenE::CyOpen
+            Variant::KwNumber
+                | Variant::KwString
+                | Variant::KwArray
+                | Variant::KwObject
+                | Variant::KwBool
+                | Variant::KwAny
+                | Variant::SqOpen
+                | Variant::CyOpen
         )
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{Logos, TokenE};
+    use super::{Logos, Variant};
 
     #[test]
     fn tokenize() {
-        use TokenE::*;
+        use Variant::*;
 
         let inp = "edades = [ 1, 2, 3, ]\nnombre = \"Daniel\"edad = 2";
 
-        let tokens = TokenE::lexer(inp);
+        let tokens = Variant::lexer(inp);
         let tokens = tokens
             .into_iter()
             .map(std::result::Result::unwrap)

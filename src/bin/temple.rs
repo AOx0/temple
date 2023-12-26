@@ -1,10 +1,10 @@
 use anyhow::{anyhow, Result};
 use clap::Parser;
-use owo_colors::OwoColorize;
 use std::process::ExitCode;
 use temple::{
     args::{Args, Commands},
     config::TempleDirs,
+    error, trace,
     values::Values,
 };
 
@@ -18,7 +18,7 @@ fn app(args: &Args) -> Result<()> {
             temple_dirs.create_global_config()
         }
         Commands::DebugConfig { ref path } => {
-            println!("Reading: {}", path.display());
+            trace!("Reading: {}", path.display());
 
             let contents = std::fs::read_to_string(path)?;
 
@@ -26,10 +26,11 @@ fn app(args: &Args) -> Result<()> {
                 eprintln!("{err:?}");
                 anyhow!("Failed to parse values from {}", path.display())
             })?;
-            println!("{:?}", values);
+
+            println!("{:#?}", values);
 
             values.verify_types().map_err(|err| {
-                eprintln!("{err:?}");
+                error!(err);
                 anyhow!("Invalid types")
             })
         }
@@ -44,11 +45,7 @@ fn main() -> ExitCode {
         Ok(()) => ExitCode::SUCCESS,
         Err(e) => {
             if !args.no_errors() {
-                eprintln!(
-                    "{}: {e}",
-                    "error".if_supports_color(owo_colors::Stream::Stdout, |s| s
-                        .style(owo_colors::Style::new().bold().red()))
-                );
+                error!("{e}",);
             }
             ExitCode::FAILURE
         }
