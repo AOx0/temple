@@ -222,6 +222,11 @@ pub enum TokenE<'i> {
 
     #[regex("(?i:[a-z][_a-z0-9]*)")]
     Ident(&'i str),
+
+    #[regex("#[^\n]*", |lex| lex.slice())]
+    Comment(&'i str),
+    // #[regex(".*", |lex| lex.slice())]
+    // Unknow(&'i str),
 }
 
 impl std::fmt::Display for TokenE<'_> {
@@ -247,6 +252,8 @@ impl std::fmt::Display for TokenE<'_> {
             TokenE::KwArray => write!(f, "Array"),
             TokenE::KwAny => write!(f, "Any"),
             TokenE::Ident(ident) => write!(f, "{ident}"),
+            // TokenE::Unknow(matched) => write!(f, "{matched}"),
+            TokenE::Comment(text) => write!(f, "# {text}"),
         }
     }
 }

@@ -226,6 +226,28 @@ impl Values {
                 token.expect("Already matched error")
             };
 
+            /*
+            if let TokenE::Unknow(matched) = token {
+                eprintln!(
+                    "{}",
+                    tokens.error_current_span(
+                        MessageType::Error,
+                        format!("Matched unknown token {matched}")
+                    )
+                );
+                continue;
+            } else
+            */
+            if let TokenE::Comment(text) = token {
+                if std::env::var("TEMPLE_INFO").is_ok() || std::env::var("TEMPLE_TRACE").is_ok() {
+                    println!(
+                        "{}: Skipping comment '{text}'",
+                        "tracing".if_supports_color(owo_colors::Stream::Stdout, |s| s
+                            .style(owo_colors::Style::new().bold().bright_black()))
+                    );
+                }
+                continue;
+            }
             tokens.span.push(lexer.span());
             tokens.token.push(token);
         }
