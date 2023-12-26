@@ -60,7 +60,7 @@ complete -c temple -n "not __fish_seen_subcommand_from $commands" -a init -d 'In
 complete -c temple -n "not __fish_seen_subcommand_from $commands" -a debug-config -d 'Parse and dump objects to stdout'
 complete -c temple -n "not __fish_seen_subcommand_from $commands" -a help -d 'Print this message or the help of the given subcommand(s)'
 
-#debub
+# debug
 complete -c temple -n "__fish_seen_subcommand_from debug-config" -F
 
 # help
