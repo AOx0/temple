@@ -3,6 +3,7 @@ mod token;
 
 use anyhow::{anyhow, ensure};
 use logos::Span;
+use owo_colors::OwoColorize;
 use std::{
     collections::HashMap,
     ops::{Deref, DerefMut},
@@ -11,7 +12,7 @@ use std::{
 use tera::{Map, Value};
 use token::{Logos, TokenE};
 
-use crate::values::token::Tokens;
+use crate::values::token::{MessageType, Tokens};
 
 #[derive(Debug, PartialEq, Eq)]
 pub struct Values {
@@ -129,8 +130,10 @@ impl Values {
             let val_type = Type::from(v);
 
             if !decl_type.is_equivalent(&val_type) {
-                println!(
-                    "Data type for value {k:?} of type {decl_type:?} does not conform to the defined value {v:?} of type {val_type:?}",
+                eprintln!(
+                    "{}: Data type for value {k:?} of type {decl_type:?} does not conform to the defined value {v:?} of type {val_type:?}",
+                    "error".if_supports_color(owo_colors::Stream::Stdout, |s| s
+                        .style(owo_colors::Style::new().bold().red()))
                 );
 
                 res = Err(anyhow!("Invalid configuration values/types"));
@@ -215,9 +218,8 @@ impl Values {
         while let Some(token) = lexer.next() {
             let token = if let Err(()) = token {
                 eprintln!(
-                    "Error reading token at {}:\n    {}",
-                    line_col(s, lexer.span()),
-                    &s[lexer.span()]
+                    "{}",
+                    tokens.error_current_span(MessageType::Error, "Error reading token")
                 );
                 continue;
             } else {
@@ -232,7 +234,7 @@ impl Values {
 
         ensure! {
             tokens.is_empty(),
-            anyhow!("Invalid syntax on config, expected to finish parsing everything but remains: {:?}", tokens.tokens())
+            anyhow!(tokens.error_current_span(MessageType::Error, format!("Invalid syntax on config, expected to finish parsing everything but remains: {:?}", tokens.tokens())))
         };
 
         Ok(Values {

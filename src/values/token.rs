@@ -1,5 +1,6 @@
 pub use logos::Logos;
 use logos::Span;
+use owo_colors::OwoColorize;
 
 use crate::values::{get_line, line_col};
 
@@ -17,9 +18,55 @@ pub struct Token<'i> {
     pub span: Span,
 }
 
-pub struct TokenPeek<'re, 'i> {
+pub struct Peek<'re, 'i> {
     pub token: &'re TokenE<'i>,
     pub span: &'re Span,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub enum MessageType {
+    Error,
+    Warning,
+}
+
+impl std::fmt::Display for MessageType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            MessageType::Error => write!(
+                f,
+                "{}",
+                "error".if_supports_color(owo_colors::Stream::Stdout, |s| s
+                    .style(owo_colors::Style::new().bold().red()))
+            ),
+            MessageType::Warning => write!(
+                f,
+                "{}",
+                "warning".if_supports_color(owo_colors::Stream::Stdout, |s| s
+                    .style(owo_colors::Style::new().bold().yellow()))
+            ),
+        }
+    }
+}
+
+struct Underlined(Span);
+
+impl std::fmt::Display for Underlined {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let span = self.0.clone();
+
+        for _ in 0..(span.start - 1) {
+            write!(f, " ")?;
+        }
+
+        write!(
+            f,
+            "{}",
+            "^".repeat(span.end - span.start)
+                .if_supports_color(owo_colors::Stream::Stdout, |s| {
+                    s.style(owo_colors::Style::new().bold().yellow())
+                }),
+        )
+    }
 }
 
 impl Tokens<'_> {
@@ -31,23 +78,42 @@ impl Tokens<'_> {
         res
     }
 
-    pub fn error_current_span(&self, msg: impl Into<String>) -> String {
+    pub fn error_current_span(&self, typ: MessageType, msg: impl Into<String>) -> String {
         if self.is_empty() {
             String::new()
         } else {
             let location = line_col(self.inp, self.span[self.cursor].clone());
             format!(
-                "{msg}\n    {path}:{line}:{start} {contents}",
+                "{typ}: {msg}\n  {arrow}{path}:{line}:{start}\n{empty_pipe}\n{bline} {contents}\n{empty_pipe} {underline}\n{empty_pipe}",
+                typ = typ,
                 msg = msg.into(),
+                arrow = "--> ".if_supports_color(owo_colors::Stream::Stdout, |s| s
+                    .style(owo_colors::Style::new().bold().blue())),
+                empty_pipe = format!("{: >3} |", "")
+                    .if_supports_color(owo_colors::Stream::Stdout, |s| s
+                    .style(owo_colors::Style::new().bold().blue())),
+                bline = format!("{line: >3} |", line = location.1)
+                    .if_supports_color(owo_colors::Stream::Stdout, |s| s
+                    .style(owo_colors::Style::new().bold().blue())),
                 path = self.path,
                 line = location.1,
                 start = location.0.start,
-                contents = get_line(self.inp, location.1)
+                contents = get_line(self.inp, location.1),
+                underline = Underlined(location.0.clone())
             )
         }
     }
 
     pub fn steps(&mut self, steps: usize) {
+        if std::env::var("TEMPLE_INFO").is_ok() {
+            for token in &self.token[self.cursor..self.cursor + steps] {
+                println!(
+                    "{}: Shift {token} ({token:?})",
+                    "info".if_supports_color(owo_colors::Stream::Stdout, |s| s
+                        .style(owo_colors::Style::new().bold().green()))
+                );
+            }
+        }
         self.cursor += steps;
     }
 
@@ -79,12 +145,8 @@ impl Tokens<'_> {
         })
     }
 
-    pub fn try_span(&self) -> Option<Span> {
-        (!self.is_empty()).then(|| self.span[self.cursor].clone())
-    }
-
-    pub fn peek(&self) -> TokenPeek<'_, '_> {
-        TokenPeek {
+    pub fn peek(&self) -> Peek<'_, '_> {
+        Peek {
             token: &self.token[self.cursor],
             span: &self.span[self.cursor],
         }
@@ -162,6 +224,33 @@ pub enum TokenE<'i> {
     Ident(&'i str),
 }
 
+impl std::fmt::Display for TokenE<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            TokenE::FNumber(num) => write!(f, "{num}"),
+            TokenE::SNumber(num) => write!(f, "{num}"),
+            TokenE::UNumber(num) => write!(f, "{num}"),
+            TokenE::String(str) => write!(f, "{str:?}"),
+            TokenE::Bool(bool) => write!(f, "{bool}"),
+            TokenE::SqClose => write!(f, "']'"),
+            TokenE::SqOpen => write!(f, "'['"),
+            TokenE::CyClose => write!(f, "'}}'"),
+            TokenE::CyOpen => write!(f, "'{{'"),
+            TokenE::Comma => write!(f, "','"),
+            TokenE::Semicolon => write!(f, "';'"),
+            TokenE::Eq => write!(f, "'='"),
+            TokenE::EqD => write!(f, "':'"),
+            TokenE::KwNumber => write!(f, "Number"),
+            TokenE::KwString => write!(f, "String"),
+            TokenE::KwBool => write!(f, "Bool"),
+            TokenE::KwObject => write!(f, "Object"),
+            TokenE::KwArray => write!(f, "Array"),
+            TokenE::KwAny => write!(f, "Any"),
+            TokenE::Ident(ident) => write!(f, "{ident}"),
+        }
+    }
+}
+
 impl TokenE<'_> {
     pub fn is_expr_decl(&self) -> bool {
         matches!(
@@ -183,6 +272,8 @@ impl TokenE<'_> {
                 | TokenE::KwObject
                 | TokenE::KwBool
                 | TokenE::KwAny
+                | TokenE::SqOpen
+                | TokenE::CyOpen
         )
     }
 }

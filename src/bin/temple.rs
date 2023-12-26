@@ -1,6 +1,7 @@
-use anyhow::Result;
+use anyhow::{anyhow, Result};
 use clap::Parser;
-use std::{process::ExitCode, str::FromStr};
+use owo_colors::OwoColorize;
+use std::process::ExitCode;
 use temple::{
     args::{Args, Commands},
     config::TempleDirs,
@@ -10,7 +11,7 @@ use temple::{
 fn app(args: &Args) -> Result<()> {
     let temple_dirs = TempleDirs::default_paths()?;
 
-    let result = match args.command {
+    match args.command {
         Commands::List { .. } => temple_dirs.display_available_templates(&args.command),
         Commands::Init => {
             temple_dirs.create_global_dir()?;
@@ -21,19 +22,19 @@ fn app(args: &Args) -> Result<()> {
 
             let contents = std::fs::read_to_string(path)?;
 
-            let values = Values::from_str(&contents, path)?;
+            let values = Values::from_str(&contents, path).map_err(|err| {
+                eprintln!("{err:?}");
+                anyhow!("Failed to parse values from {}", path.display())
+            })?;
             println!("{:?}", values);
 
-            values.verify_types()
+            values.verify_types().map_err(|err| {
+                eprintln!("{err:?}");
+                anyhow!("Invalid types")
+            })
         }
         _ => unimplemented!(),
-    };
-
-    if let Err(msg) = result {
-        println!("{msg}")
     }
-
-    Ok(())
 }
 
 fn main() -> ExitCode {
@@ -43,7 +44,11 @@ fn main() -> ExitCode {
         Ok(()) => ExitCode::SUCCESS,
         Err(e) => {
             if !args.no_errors() {
-                eprintln!("Error: {e}");
+                eprintln!(
+                    "{}: {e}",
+                    "error".if_supports_color(owo_colors::Stream::Stdout, |s| s
+                        .style(owo_colors::Style::new().bold().red()))
+                );
             }
             ExitCode::FAILURE
         }

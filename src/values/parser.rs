@@ -3,41 +3,40 @@ use std::collections::HashMap;
 use anyhow::{anyhow, bail, ensure, Context, Result};
 use tera::{Map, Number, Value};
 
-use crate::values::{Type, TypeMap, ValueMap};
+use crate::values::{token::MessageType, Type, TypeMap, ValueMap};
 
 use super::token::{TokenE, Tokens};
 
 pub fn try_value_from(tokens: &mut Tokens<'_>) -> Result<Value, anyhow::Error> {
-    match tokens
-        .try_first()
-        .context("Premature ending, expetced Value")?
-        .token
-    {
-        TokenE::String(s) => {
+    match tokens.tokens() {
+        &[TokenE::String(s), ..] => {
             let s = s.to_string();
             tokens.step();
             Ok(Value::String(s))
         }
-        TokenE::UNumber(v) => {
+        &[TokenE::UNumber(v), ..] => {
             tokens.step();
             Ok(Value::Number(v.into()))
         }
-        TokenE::SNumber(v) => {
+        &[TokenE::SNumber(v), ..] => {
             tokens.step();
             Ok(Value::Number(v.into()))
         }
-        TokenE::FNumber(v) => {
+        &[TokenE::FNumber(v), ..] => {
             tokens.step();
             Ok(Value::Number(
                 Number::from_f64(v).context("Invalid float value")?,
             ))
         }
-        TokenE::SqOpen => parse_list(tokens),
-        TokenE::CyOpen => parse_object(tokens),
-        _ => bail!(tokens.error_current_span(format!(
-            "Found unexpected token {:?} while trying to parse value",
-            tokens.try_first().map(|t| t.token)
-        )),),
+        [TokenE::SqOpen, ..] => parse_list(tokens),
+        [TokenE::CyOpen, ..] => parse_object(tokens),
+        _ => bail!(tokens.error_current_span(
+            MessageType::Error,
+            format!(
+                "Found unexpected token {:?} while trying to parse value",
+                tokens.try_first().map(|t| t.token)
+            )
+        )),
     }
 }
 
@@ -63,10 +62,13 @@ pub fn try_type_from(tokens: &mut Tokens<'_>) -> Result<Type, anyhow::Error> {
         [TokenE::KwObject, ..] => parse_object_type(tokens.skiping(1)),
         [TokenE::SqOpen, ..] => parse_array_type(tokens),
         [TokenE::CyOpen, ..] => parse_object_type(tokens),
-        _ => bail!(tokens.error_current_span(format!(
-            "Found unexpected token {:?} while trying to parse data type",
-            tokens.try_first().map(|t| t.token)
-        )),),
+        _ => bail!(tokens.error_current_span(
+            MessageType::Error,
+            format!(
+                "Found unexpected token {:?} while trying to parse data type",
+                tokens.try_first().map(|t| t.token)
+            )
+        )),
     }
 }
 
@@ -87,9 +89,10 @@ pub fn parse_object_type(tokens: &mut Tokens<'_>) -> Result<Type, anyhow::Error>
                 res.insert(ident.to_string(), value).is_some().then(|| {
                     println!(
                         "{}",
-                        tokens.error_current_span(format!(
-                            "Warn: Ident `{ident}` is already defined, overriding"
-                        )),
+                        tokens.error_current_span(
+                            MessageType::Warning,
+                            format!("Ident `{ident}` is already defined, overriding")
+                        ),
                     );
                 });
 
@@ -100,10 +103,13 @@ pub fn parse_object_type(tokens: &mut Tokens<'_>) -> Result<Type, anyhow::Error>
 
             ensure!(
                 tokens.peek().token == &TokenE::CyClose,
-                anyhow!(tokens.error_current_span(format!(
-                    "Expected closing '}}' in Object type declaration but found {:?}",
-                    tokens.peek().token
-                )),)
+                anyhow!(tokens.error_current_span(
+                    MessageType::Error,
+                    format!(
+                        "Expected closing '}}' in Object type declaration but found {:?}",
+                        tokens.peek().token
+                    )
+                ))
             );
 
             tokens.step();
@@ -111,8 +117,9 @@ pub fn parse_object_type(tokens: &mut Tokens<'_>) -> Result<Type, anyhow::Error>
         }
     } else {
         Err(anyhow!(tokens.error_current_span(
+            MessageType::Error,
             "Token is not an object type declaration",
-        ),))
+        )))
     }
 }
 
@@ -124,16 +131,19 @@ pub fn parse_array_type(tokens: &mut Tokens<'_>) -> Result<Type, anyhow::Error> 
 
         ensure!(
             tokens.peek().token == &TokenE::SqClose,
-            anyhow!(tokens
-                .error_current_span("Expected ']' after type {typ} in Array type declaration"))
+            anyhow!(tokens.error_current_span(
+                MessageType::Error,
+                "Expected ']' after type {typ} in Array type declaration"
+            ))
         );
 
         tokens.step();
         Ok(Type::Array(Box::new(typ)))
     } else {
         Err(anyhow!(tokens.error_current_span(
+            MessageType::Error,
             "Expected '[' before type Array type declaration",
-        ),))
+        )))
     }
 }
 
@@ -150,11 +160,15 @@ pub fn parse_config(tokens: &mut Tokens<'_>) -> Result<(ValueMap, TypeMap), anyh
                 // Parse optional data type
                 let typ = if matches!(tokens.tokens(), [TokenE::EqD, token, ..] if token.is_type_decl())
                 {
-                    tokens.step();
-                    let typ = try_type_from(tokens)?;
+                    let typ = try_type_from(tokens.skiping(1))?;
                     types.insert(ident.to_string(), typ);
 
                     Some(types.get(ident.as_str()).expect("just pushed the value"))
+                } else if let [TokenE::EqD, token, ..] = tokens.tokens() {
+                    bail!(tokens.error_current_span(
+                        MessageType::Error,
+                        format!("Unexpected token {token} ({token:?}) following ':' in type declaration")
+                    ))
                 } else {
                     types.insert(ident.to_string(), Type::Any);
                     None
@@ -166,9 +180,10 @@ pub fn parse_config(tokens: &mut Tokens<'_>) -> Result<(ValueMap, TypeMap), anyh
                     values.insert(ident.to_string(), value).is_some().then(|| {
                         println!(
                             "{}",
-                            tokens.error_current_span(format!(
-                                "Warn: Ident `{ident}` is already defined, overriding",
-                            )),
+                            tokens.error_current_span(
+                                MessageType::Warning,
+                                format!("Ident `{ident}` is already defined, overriding")
+                            ),
                         );
                     });
                 } else {
@@ -178,18 +193,20 @@ pub fn parse_config(tokens: &mut Tokens<'_>) -> Result<(ValueMap, TypeMap), anyh
                         .then(|| {
                             println!(
                                 "{}",
-                                tokens.error_current_span(format!(
-                                    "Warn: Ident `{ident}` is already defined, overriding",
-                                )),
+                                tokens.error_current_span(
+                                    MessageType::Warning,
+                                    format!("Ident `{ident}` is already defined, overriding")
+                                ),
                             );
                         });
 
                     if typ.is_none() {
                         println!(
                             "{}",
-                            tokens.error_current_span(format!(
-                                "Warn: We advise to state a data type for empty values",
-                            )),
+                            tokens.error_current_span(
+                                MessageType::Warning,
+                                "We advise to state a data type for empty values"
+                            ),
                         );
                     }
                 }
@@ -199,10 +216,15 @@ pub fn parse_config(tokens: &mut Tokens<'_>) -> Result<(ValueMap, TypeMap), anyh
                 }
             }
             &[token, ..] => {
-                bail!(tokens.error_current_span(format!("Found unexpected token {:?}", token)),)
+                bail!(tokens.error_current_span(
+                    MessageType::Error,
+                    format!("Found unexpected token {token:?}")
+                ))
             }
             _ => {
-                bail!(tokens.error_current_span("Expected token, found nothing",),)
+                bail!(
+                    tokens.error_current_span(MessageType::Error, "Expected token, found nothing"),
+                )
             }
         }
     }
@@ -210,7 +232,7 @@ pub fn parse_config(tokens: &mut Tokens<'_>) -> Result<(ValueMap, TypeMap), anyh
     ensure! {
         tokens.is_empty(),
         anyhow!(
-            tokens.error_current_span(
+            tokens.error_current_span(MessageType::Error,
                 format!("Invalid syntax on config, expected to finish parsing everything but remains: {:?}",
                     tokens.tokens()
                 )
@@ -246,10 +268,13 @@ pub fn parse_object(tokens: &mut Tokens<'_>) -> Result<Value, anyhow::Error> {
 
             ensure!(
                 tokens.peek().token == &TokenE::CyClose,
-                anyhow!(tokens.error_current_span(format!(
-                    "Expected closing '}}' in Object declaration but found {:?}",
-                    tokens.peek().token
-                )),)
+                anyhow!(tokens.error_current_span(
+                    MessageType::Error,
+                    format!(
+                        "Expected closing '}}' in Object declaration but found {:?}",
+                        tokens.peek().token
+                    )
+                ))
             );
 
             tokens.step();
@@ -257,9 +282,10 @@ pub fn parse_object(tokens: &mut Tokens<'_>) -> Result<Value, anyhow::Error> {
             Ok(Value::Object(res))
         }
     } else {
-        Err(anyhow!(
-            tokens.error_current_span("Token is not an object declaration",),
-        ))
+        Err(anyhow!(tokens.error_current_span(
+            MessageType::Error,
+            "Token is not an object declaration"
+        )))
     }
 }
 
@@ -268,7 +294,7 @@ fn parse_list(tokens: &mut Tokens<'_>) -> Result<Value, anyhow::Error> {
         tokens.step();
 
         if !tokens.tokens().contains(&TokenE::SqClose) {
-            bail!(tokens.error_current_span("Array not closed",),)
+            bail!(tokens.error_current_span(MessageType::Error, "Array not closed"))
         }
 
         if let &[TokenE::SqClose, ..] = tokens.tokens() {
@@ -284,7 +310,10 @@ fn parse_list(tokens: &mut Tokens<'_>) -> Result<Value, anyhow::Error> {
                         list.push(value);
                     }
                     (false, [TokenE::Comma, TokenE::Comma, ..]) => {
-                        bail!(tokens.error_current_span("There must be a value between commas",),)
+                        bail!(tokens.error_current_span(
+                            MessageType::Error,
+                            "There must be a value between commas"
+                        ))
                     }
                     (false, [TokenE::SqClose, ..]) => {
                         tokens.step();
@@ -292,10 +321,12 @@ fn parse_list(tokens: &mut Tokens<'_>) -> Result<Value, anyhow::Error> {
                     }
                     (false, [TokenE::Comma, ..]) => tokens.step(),
                     (false, [token, ..]) => {
-                        bail!(tokens
-                            .error_current_span(format!("Invalid token in list: `{token:?}`",)),)
+                        bail!(tokens.error_current_span(
+                            MessageType::Error,
+                            format!("Invalid token in list declaration: `{token:?}`")
+                        ))
                     }
-                    _ => unreachable!("We did check the list is not empty"),
+                    (_, []) => unreachable!("We did check the list is not empty"),
                 }
             }
 
@@ -306,6 +337,9 @@ fn parse_list(tokens: &mut Tokens<'_>) -> Result<Value, anyhow::Error> {
             Ok(Value::Array(list))
         }
     } else {
-        Err(anyhow!(tokens.error_current_span("Token is not a list",),))
+        Err(anyhow!(tokens.error_current_span(
+            MessageType::Error,
+            "Token is not a list",
+        )))
     }
 }
