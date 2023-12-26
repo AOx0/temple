@@ -10,7 +10,7 @@ use std::{
 use tera::{Map, Value};
 use token::{Logos, Variant};
 
-use crate::values::token::Tokens;
+use crate::{values::token::Tokens, warn};
 
 #[derive(Debug, PartialEq, Eq)]
 pub struct Values {
@@ -24,7 +24,7 @@ pub struct ValueMap(HashMap<String, Value>);
 #[derive(Debug, PartialEq, Eq, Default)]
 pub struct TypeMap(HashMap<String, Type>);
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub enum Type {
     Number,
     String,
@@ -36,23 +36,18 @@ pub enum Type {
 }
 
 impl Type {
-    /// Verify if a given value matches the current Type variant
-    #[must_use]
-    pub fn value_matches(&self, value: &Value) -> bool {
-        if let Type::Any = self {
-            true
-        } else {
-            &Type::from(value) == self
-        }
-    }
-
     #[must_use]
     pub fn is_equivalent(&self, other: &Type) -> bool {
-        if &Type::Any == self || &Type::Any == other {
+        if &Type::Any == self {
             true
         } else {
             self == other
         }
+    }
+
+    #[must_use]
+    pub fn is_equivalent_or_empty(&self, other: &Type) -> bool {
+        self.is_equivalent(other) || other == &Type::Unknown
     }
 }
 
@@ -81,31 +76,76 @@ impl std::fmt::Display for Type {
     }
 }
 
-impl From<&Value> for Type {
-    fn from(value: &Value) -> Self {
-        match value {
-            Value::Null => Type::Any,
+impl Type {
+    fn from(value: &Value, decl_type: &Type) -> Self {
+        let res = match value {
+            Value::Null => decl_type.clone(),
             Value::Bool(_) => Type::Bool,
             Value::Number(_) => Type::Number,
             Value::String(_) => Type::String,
             Value::Array(a) => Type::Array(Box::new(match a.as_slice() {
-                [] => Type::Any,
-                [first] => Type::from(first),
-                [first, ..] => {
-                    for e in a {
-                        assert!(Type::from(e).is_equivalent(&Type::from(first)));
+                [] => {
+                    if let Type::Array(decl_a) = decl_type {
+                        decl_a.deref().clone()
+                    } else {
+                        Type::Unknown
                     }
-                    Type::from(first)
+                }
+                [first] => Type::from(
+                    first,
+                    if let Type::Array(decl) = decl_type {
+                        decl
+                    } else {
+                        &Type::Unknown
+                    },
+                ),
+                [first, ..] => {
+                    let inner_decl = if let Type::Array(decl) = decl_type {
+                        decl
+                    } else {
+                        &Type::Unknown
+                    };
+                    for e in a {
+                        if !Type::from(e, inner_decl).is_equivalent(&Type::from(first, inner_decl))
+                        {
+                            warn!("Not all values in array have the same value. Treating as an Array [ Any ] for {}", value);
+                            return Type::Array(Box::new(Type::Any));
+                        }
+                    }
+                    Type::from(first, inner_decl)
                 }
             })),
             Value::Object(o) => {
                 let mut fields = HashMap::new();
+                let inner_decl = if let Type::Object(decl) = decl_type {
+                    Some(decl)
+                } else {
+                    None
+                };
+
                 for (k, v) in o {
-                    fields.insert(k.to_owned(), Type::from(v));
+                    fields.insert(
+                        k.to_owned(),
+                        Type::from(
+                            v,
+                            inner_decl.and_then(|m| m.get(k)).unwrap_or(&Type::Unknown),
+                        ),
+                    );
                 }
                 Type::Object(fields)
             }
-        }
+        };
+
+        crate::trace!(
+            "Type::from with_hint={}: {value} has type {res}",
+            if matches!(decl_type, Type::Unknown) {
+                "no"
+            } else {
+                "yes"
+            }
+        );
+
+        res
     }
 }
 
@@ -125,11 +165,15 @@ impl Values {
 
         for (k, v) in self.value_map.iter() {
             let decl_type = self.type_map.get(k).expect("Missing value");
-            let val_type = Type::from(v);
+            let val_type = Type::from(v, decl_type);
 
-            if !decl_type.is_equivalent(&val_type) {
+            crate::trace!("Decl type of '{k}' is {decl_type}");
+            crate::trace!("Real type of '{k}' is {val_type}");
+
+            if !decl_type.is_equivalent_or_empty(&val_type) {
                 crate::error!(
-                    "Data type for value {k:?} of type {decl_type:?} does not conform to the defined value {v:?} of type {val_type:?}",
+                    "The value of '{k}' does not match with the declared type\n    Value: {v}\n    Decl type: {decl_type}\n    Real type: {val_type}",
+                    v = format!("{v:#}").replace('\n', "\n    ")
                 );
 
                 res = Err(anyhow!("Invalid configuration values/types"));
