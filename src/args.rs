@@ -14,7 +14,10 @@ impl Args {
     pub fn no_errors(&self) -> bool {
         match self.command {
             Commands::List { errors, .. } => !errors,
-            Commands::Init | Commands::New { .. } | Commands::DebugConfig { .. } => false,
+            Commands::Init { .. }
+            | Commands::Deinit { .. }
+            | Commands::New { .. }
+            | Commands::DebugConfig { .. } => false,
         }
     }
 }
@@ -63,5 +66,33 @@ pub enum Commands {
         path: PathBuf,
     },
     /// Initialize temple configuration directory
-    Init,
+    Init {
+        #[clap(subcommand)]
+        sub: InitOpt,
+    },
+    /// Remove a temple configuration directory
+    Deinit {
+        #[clap(subcommand)]
+        sub: DeinitOpt,
+    },
+}
+
+#[derive(Debug, Subcommand, Clone, Copy)]
+pub enum InitOpt {
+    /// Create the global temple configuration dir
+    Global,
+    /// Create a new temple local configuration dir in the current dir
+    Local {
+        /// Name the local folder "temple" instead of ".temple"
+        #[clap(long)]
+        not_hidden: bool,
+    },
+}
+
+#[derive(Debug, Subcommand, Clone, Copy)]
+pub enum DeinitOpt {
+    /// Remove the global temple configuration dir
+    Global,
+    /// Remove an existing temple local configuration dir
+    Local,
 }

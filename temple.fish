@@ -1,4 +1,4 @@
-set -l commands list new init help 'debug-config'
+set -l commands list new init deinit help 'debug-config'
 set -l templates (temple list -se 2> /dev/null | tr " " "\n" || echo "")
 
 function __fish_temple_contains_temple_new
@@ -24,7 +24,7 @@ function __fish_temple_complete_templates
 end
 
 function __fish_temple_help_subcommand_completion
-    set -l commands list new init help 'debug-config'
+    set -l commands list new init deinit help 'debug-config'
     set -l cmd_args (commandline -opc)
 
     if test (count $cmd_args) -eq 2
@@ -56,9 +56,19 @@ complete -c temple -n "not __fish_seen_subcommand_from help" -s h -l help -d 'Pr
 # commands
 complete -c temple -n "not __fish_seen_subcommand_from $commands" -a new -d 'Create a new project from a template'
 complete -c temple -n "not __fish_seen_subcommand_from $commands" -a list -d 'List existing templates'
-complete -c temple -n "not __fish_seen_subcommand_from $commands" -a init -d 'Initialize template directory at ~/.'
+complete -c temple -n "not __fish_seen_subcommand_from $commands" -a init -d 'Initialize a template config directory'
+complete -c temple -n "not __fish_seen_subcommand_from $commands" -a deinit -d 'Remove a temple config directory'
 complete -c temple -n "not __fish_seen_subcommand_from $commands" -a debug-config -d 'Parse and dump objects to stdout'
 complete -c temple -n "not __fish_seen_subcommand_from $commands" -a help -d 'Print this message or the help of the given subcommand(s)'
+
+# init
+complete -c temple -n "__fish_seen_subcommand_from init; and __fish_seen_subcommand_from local" -l not-hidden -d 'Name the local folder "temple" instead of ".temple"'
+complete -c temple -n "__fish_seen_subcommand_from init; and not __fish_seen_subcommand_from global local" -a global -d 'Create the global temple configuration dir'
+complete -c temple -n "__fish_seen_subcommand_from init; and not __fish_seen_subcommand_from global local" -a local -d 'Create a new temple local configuration dir'
+
+# deinit
+complete -c temple -n "__fish_seen_subcommand_from deinit; and not __fish_seen_subcommand_from global local" -a global -d 'Create the global temple configuration dir'
+complete -c temple -n "__fish_seen_subcommand_from deinit; and not __fish_seen_subcommand_from global local" -a local -d 'Create a new temple local configuration dir in the current dir'
 
 # debug
 complete -c temple -n "__fish_seen_subcommand_from debug-config" -F
@@ -73,6 +83,6 @@ complete -c temple -n "__fish_seen_subcommand_from list" -s p -l path -d 'Show t
 # new
 complete -c temple -n "__fish_seen_subcommand_from new; and not __fish_seen_subcommand_from help" -ka '(__fish_temple_complete_templates)'
 complete -c temple -n "__fish_seen_subcommand_from new" -s l -l local -d 'Prefer local (./.temple/template_name) if available [default: prefer ~/.temple/template_name]'
-complete -c temple -n "__fish_seen_subcommand_from new" -s i -l in_place -d 'Place contents in_place (./.) instead of creating a folder'
+complete -c temple -n "__fish_seen_subcommand_from new" -s i -l in-place -d 'Place contents in_place (./.) instead of creating a folder'
 complete -c temple -n "__fish_seen_subcommand_from new" -s o -l overwrite -d 'Overwrite any already existing files'
 complete -c temple -n "__fish_seen_subcommand_from new; and __fish_seen_subcommand_from $templates" -n "not contains -- -- (commandline -opc)" -a '(__fish_temple_c_complete)' 

@@ -1,23 +1,42 @@
-use anyhow::{anyhow, bail, ensure, Context};
-use derive_builder::Builder;
+use anyhow::{anyhow, bail, ensure, Context, Ok};
 use directories::UserDirs;
 use std::path::{Path, PathBuf};
 
 use crate::{args::Commands, info, warn};
 
-#[derive(Builder)]
 pub struct TempleDirs {
     user_home: PathBuf,
     global_config: PathBuf,
     local_config: Option<PathBuf>,
 }
 
-#[derive(Clone)]
-pub struct Template {
-    pub path: PathBuf,
-    pub name: String,
+#[derive(Debug, Clone)]
+pub struct Template(pub PathBuf);
+
+impl Template {
+    #[must_use]
+    pub fn name(&self) -> &str {
+        self.file_name()
+            .and_then(|name| name.to_str())
+            .expect("Failed to get path file_name")
+    }
 }
 
+impl std::ops::Deref for Template {
+    type Target = Path;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl std::ops::DerefMut for Template {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.0
+    }
+}
+
+#[derive(Debug)]
 pub struct Templates {
     pub global: Vec<Template>,
     pub local: Vec<Template>,
@@ -32,8 +51,14 @@ pub enum Prefer {
 impl Templates {
     #[must_use]
     pub fn get_named(&self, name: &str, prefers: &Prefer) -> Option<&Template> {
-        let local = self.local.iter().find(|&t| t.name == name);
-        let global = self.global.iter().find(|&t| t.name == name);
+        let local = self
+            .local
+            .iter()
+            .find(|&t| t.file_name().is_some_and(|n| n == name));
+        let global = self
+            .global
+            .iter()
+            .find(|&t| t.file_name().is_some_and(|n| n == name));
 
         match (local, global) {
             (Some(local), _) if prefers == &Prefer::Local => Some(local),
@@ -51,41 +76,39 @@ impl TempleDirs {
     ///
     /// This function will return an error if the global config directory does not exist or any IO error occurs
     pub fn create_global_config(&self) -> anyhow::Result<Option<std::fs::File>> {
-        crate::trace!("Checking if global config exists");
+        self.create_config_file(self.global_config())
+    }
 
-        let dir_exists = self.global_config().exists() && self.global_config().is_dir();
+    pub fn create_config_file(&self, inside: &Path) -> anyhow::Result<Option<std::fs::File>> {
+        crate::trace!("Checking if config dir {} exists", inside.display());
+
+        let dir_exists = inside.exists() && inside.is_dir();
 
         ensure!(
             dir_exists,
-            anyhow!(
-                "Global config directory {} does not exist",
-                self.global_config().display()
-            )
+            anyhow!("Config directory {} does not exist", inside.display())
         );
 
-        let config_file = self.global_config().join("config.tpl");
+        let config_file = inside.join("config.tpl");
         let exists = config_file.exists();
 
         if exists && config_file.is_file() {
             info!(
-                "The global config file at path {} already exists. Skipping creation.",
+                "The config file at path {} already exists. Skipping creation.",
                 config_file.display()
             );
 
             return Ok(None);
         } else if exists {
             warn!(
-                "The global config file at path {} exists but is not a file. Removing existing path.",
+                "The config file at path {} exists but is not a file. Removing existing path.",
                 config_file.display(),
             );
 
             Self::remove_path(&config_file)?;
         }
 
-        crate::info!(
-            "Creating global configuration file at {}",
-            config_file.display()
-        );
+        crate::info!("Creating configuration file at {}", config_file.display());
 
         Ok(Some(
             std::fs::OpenOptions::new()
@@ -101,34 +124,53 @@ impl TempleDirs {
     ///
     /// This function will return an error if any IO error occurs
     pub fn create_global_dir(&self) -> anyhow::Result<()> {
-        crate::trace!("Checking if global directory exists");
+        self.create_config_dir(self.global_config())
+    }
 
-        let exists = self.global_config().exists();
+    pub fn create_config_dir(&self, at: &Path) -> anyhow::Result<()> {
+        crate::trace!("Checking if directory {} exists", at.display());
 
-        if exists && self.global_config().is_dir() {
+        let exists = at.exists();
+
+        if exists && at.is_dir() {
             info!(
-                "The global config directory at path {} already exists. Skipping creation.",
-                self.global_config().display()
+                "The config directory at path {} already exists. Skipping creation.",
+                at.display()
             );
 
             return Ok(());
         } else if exists {
             warn!(
-                "The global config directory at path {} exists but is not a directory. Removing existing path.",
-                self.global_config().display(),
+                "The config directory at path {} exists but is not a directory. Removing existing path.",
+                at.display(),
             );
 
-            Self::remove_path(self.global_config())?;
+            Self::remove_path(at)?;
         }
 
-        crate::info!(
-            "Creating global directory {}",
-            self.global_config().display()
-        );
+        crate::info!("Creating config directory {}", at.display());
 
-        std::fs::create_dir_all(self.global_config())?;
+        std::fs::create_dir_all(at)?;
 
         Ok(())
+    }
+
+    pub fn get_available_templates(&self) -> anyhow::Result<Templates> {
+        let globals = Self::get_templates_in_dir(&self.global_config)?;
+        let locals = if let Some(l) = self
+            .local_config
+            .as_ref()
+            .map(|c| Self::get_templates_in_dir(c.as_path()))
+        {
+            l?
+        } else {
+            Vec::default()
+        };
+
+        Ok(Templates {
+            global: globals,
+            local: locals,
+        })
     }
 
     pub fn display_available_templates(&self, config: &Commands) -> anyhow::Result<()> {
@@ -158,7 +200,6 @@ impl TempleDirs {
                                 .unwrap_or_else(|| {
                                     iter.first()
                                         .expect("TODO: Fix this")
-                                        .path
                                         .parent()
                                         .expect("TODO: Fix this")
                                 })
@@ -177,15 +218,15 @@ impl TempleDirs {
                         "{}",
                         iter.iter()
                             .map(|a| format!(
-                                "{dotchr}{tename}{tepath}{spacer}",
+                                "{dotchr}{tename:?}{tepath}{spacer}",
                                 dotchr = if long { "    " } else { "" },
                                 tename = (long || i == 0)
-                                    .then_some(a.name.clone())
-                                    .unwrap_or_else(|| format!("local:{}", a.name)),
+                                    .then_some(a.name().to_string())
+                                    .unwrap_or_else(|| format!("local:{:?}", a.name())),
                                 tepath = path
                                     .then_some(format!(
                                         "\t'{}'",
-                                        a.path.to_str().unwrap_or("Failed to convert path to str")
+                                        a.to_str().unwrap_or("Failed to convert path to str")
                                     ))
                                     .unwrap_or(String::new()),
                                 spacer = if long { "\n" } else { " " }
@@ -210,12 +251,6 @@ impl TempleDirs {
 }
 
 impl TempleDirs {
-    /// Create a new [`TempleDirs`] builder
-    #[must_use]
-    pub fn builder() -> TempleDirsBuilder {
-        TempleDirsBuilder::create_empty()
-    }
-
     pub fn remove_path(path: &Path) -> anyhow::Result<()> {
         let file_type = path.metadata()?.file_type();
 
@@ -316,24 +351,31 @@ impl TempleDirs {
     /// Returns an [`Err`] if any IO error happens while getting path
     /// file types or reding entries in directories.
     pub fn get_local_dir(relative_to: &Path) -> anyhow::Result<Option<PathBuf>> {
+        crate::trace!("Looking for local configs");
+
         ensure!(
             relative_to.is_dir(),
             anyhow!("Path {} is not a directory", relative_to.display())
         );
 
-        let mut curr = relative_to;
+        let mut curr = Some(relative_to);
 
-        for entry in curr.read_dir()? {
-            let entry = entry?;
-            if entry.file_type()?.is_dir()
-                && (entry.file_name() == ".temple" || entry.file_name() == "temple")
-            {
-                return Ok(Some(entry.path()));
-            } else if let Some(parent) = curr.parent() {
-                curr = parent;
-            } else {
-                return Ok(None);
+        while let Some(parent) = curr {
+            for opt in [".temple", "temple"] {
+                let path = parent.join(opt);
+
+                crate::trace!("Looking at {}", path.display());
+
+                if path.exists() && path.is_dir() {
+                    for opt in ["config.tpl", "config.temple"] {
+                        let config = path.join(opt);
+                        if config.exists() && config.is_file() {
+                            return Ok(Some(path));
+                        }
+                    }
+                }
             }
+            curr = parent.parent();
         }
 
         Ok(None)
@@ -360,14 +402,7 @@ impl TempleDirs {
             let root = entry.path().join(".temple");
 
             if entry.file_type()?.is_dir() && (root.exists() && root.is_file()) {
-                res.push(Template {
-                    name: entry
-                        .file_name()
-                        .to_str()
-                        .context("Failed to convert OsString to String")?
-                        .to_string(),
-                    path: entry.path(),
-                });
+                res.push(Template(entry.path()));
             }
         }
 
