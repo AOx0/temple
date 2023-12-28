@@ -323,11 +323,6 @@ impl TempleDirs {
             home.join(".temple")
         };
 
-        ensure!(
-            config.is_dir(),
-            anyhow!("Path {} is not a directory", config.display())
-        );
-
         Ok(config)
     }
 

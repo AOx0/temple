@@ -1,17 +1,18 @@
-use anyhow::{anyhow, Context, Result};
+use anyhow::{anyhow, ensure, Context, Result};
 use clap::Parser;
 use std::{path::PathBuf, process::ExitCode};
 use temple::{
     args::{Args, Commands, InitOpt},
     config::TempleDirs,
     error, info,
-    replacer::Contents,
+    replacer::ContentsLexer,
     trace,
     values::Values,
 };
 
 fn app(args: &Args) -> Result<()> {
-    let temple_dirs = TempleDirs::default_paths()?;
+    let temple_dirs = TempleDirs::default_paths()
+        .map_err(|e| anyhow!("Failed getting default directories: {e}"))?;
 
     trace!("Global config: {}", temple_dirs.global_config().display());
     trace!(
@@ -22,13 +23,31 @@ fn app(args: &Args) -> Result<()> {
             .unwrap_or(std::path::PathBuf::from("None").display())
     );
 
+    if !matches!(args.command, Commands::Init { sub } if sub == InitOpt::Global) {
+        ensure!(
+            temple_dirs.global_config().is_dir(),
+            anyhow!(
+                r#"There was an error with the global config dir: {0}
+Are you sure it exists, its a dir, and it contains a config.tpl?
+If this is your first temple execution you can create a new global config with the command:
+
+    temple init global
+"#,
+                temple_dirs.global_config().display(),
+            )
+        );
+    }
+
     match args.command {
         Commands::List { .. } => temple_dirs.display_available_templates(&args.command),
         Commands::Init { sub } => match sub {
             InitOpt::Global => {
-                temple_dirs.create_global_dir()?;
                 temple_dirs
-                    .create_global_config()?
+                    .create_global_dir()
+                    .map_err(|e| anyhow!("Failed creating global dir: {e}"))?;
+                temple_dirs
+                    .create_global_config()
+                    .map_err(|e| anyhow!("Failed creating config file: {e}"))?
                     .map(|mut f| {
                         use std::io::Write;
 
@@ -37,9 +56,9 @@ fn app(args: &Args) -> Result<()> {
                         writeln!(
                             f,
                             r#"temple_delimiters: {{ open: String, close: String }} = {{
-            open: "{{{{",
-            close: "}}}}"
-        }}"#
+    open: "{{{{",
+    close: "}}}}"
+}}"#
                         )
                         .map_err(|e| e.into())
                     })
@@ -55,11 +74,29 @@ fn app(args: &Args) -> Result<()> {
         },
         Commands::Deinit { sub } => match sub {
             temple::args::DeinitOpt::Global => {
-                std::fs::remove_dir_all(temple_dirs.global_config()).map_err(|e| anyhow!("{e}"))
+                let path = temple_dirs.global_config();
+
+                if confirm_remove(path) {
+                    info!(
+                        "Removing temple configuration directory: {}",
+                        path.display()
+                    );
+                    std::fs::remove_dir_all(temple_dirs.global_config()).map_err(|e| anyhow!("{e}"))
+                } else {
+                    Ok(())
+                }
             }
             temple::args::DeinitOpt::Local => {
-                if let Some(dir) = temple_dirs.local_config() {
-                    std::fs::remove_dir_all(dir).map_err(|e| anyhow!("{e}"))
+                if let Some(path) = temple_dirs.local_config() {
+                    if confirm_remove(path) {
+                        info!(
+                            "Removing temple configuration directory: {}",
+                            path.display()
+                        );
+                        std::fs::remove_dir_all(path).map_err(|e| anyhow!("{e}"))
+                    } else {
+                        Ok(())
+                    }
                 } else {
                     anyhow::bail!("No local config")
                 }
@@ -101,12 +138,57 @@ fn app(args: &Args) -> Result<()> {
                 Vec::default()
             };
 
-            let contents = " Hola ma llamo {{ name }} y {{ if xp == 4 }}soy nuevo{{ else }}soy experimentado{{}} en esto";
-
-            let contents = Contents {
-                contents: contents.to_string(),
-                origin: PathBuf::default(),
+            let get_config_path = |path: &std::path::Path| {
+                if path.join("config.tpl").exists() {
+                    path.join("config.tpl")
+                } else {
+                    path.join("config.temple")
+                }
             };
+
+            let global_config = get_config_path(temple_dirs.global_config());
+            let local_config = temple_dirs.local_config().map(|p| get_config_path(p));
+
+            let global_config_str = std::fs::read_to_string(&global_config)?;
+            let local_config_str = local_config.as_ref().map(|v| std::fs::read_to_string(v));
+
+            let mut global_config =
+                Values::from_str(&global_config_str, &global_config).map_err(|err| {
+                    eprintln!("{err:?}");
+                    anyhow!("Failed to parse values from {}", global_config.display())
+                })?;
+
+            let local_config =
+                if let (Some(path), Some(contents)) = (local_config, local_config_str) {
+                    let contents = contents?;
+                    Values::from_str(&contents, &path).map_err(|err| {
+                        eprintln!("{err:?}");
+                        anyhow!("Failed to parse values from {}", path.display())
+                    })?
+                } else {
+                    Values::default()
+                };
+
+            let config = global_config.stash(local_config);
+
+            // let contents = " Hola ma llamo {{ name }} y {{ if xp == 4 }}soy nuevo{{ else }}soy experimentado{{}} en esto";
+            let contents = " Hola ma llamo {{ if name }} mas texto {{}}";
+
+            let mut path = PathBuf::default();
+            let mut contents = ContentsLexer::new(contents, &path, &config)?;
+
+            while let Some(token) = contents.next() {
+                if let Err(e) = token {
+                    error!(e);
+                    break;
+                }
+
+                println!(
+                    "{}: {}: {token:?}",
+                    contents.get_location(contents.span()),
+                    contents.slice(),
+                )
+            }
 
             let templates = temple_dirs
                 .get_available_templates()
@@ -119,6 +201,14 @@ fn app(args: &Args) -> Result<()> {
 
         _ => unimplemented!(),
     }
+}
+
+fn confirm_remove(path: &std::path::Path) -> bool {
+    let ans = inquire::Confirm::new(&format!("Do you want to remove {}?", path.display()))
+        .with_default(false)
+        .prompt();
+
+    ans.unwrap()
 }
 
 fn main() -> ExitCode {

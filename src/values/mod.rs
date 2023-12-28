@@ -12,7 +12,7 @@ use token::{Logos, Variant};
 
 use crate::{values::token::Tokens, warn};
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Default)]
 pub struct Values {
     pub value_map: ValueMap,
     pub type_map: TypeMap,
@@ -150,14 +150,24 @@ impl Type {
 }
 
 impl Values {
-    pub fn stash(&mut self, other: Map<String, Value>) {
-        for (k, v) in other {
+    pub fn stash(mut self, other: Self) -> Self {
+        for (k, v) in other.value_map.0 {
             //TODO: Stash data type
             self.value_map
                 .insert(k, v)
                 .iter()
                 .for_each(|v| println!("Warn: Overriding value {v:?}"));
         }
+
+        for (k, v) in other.type_map.0 {
+            //TODO: Stash data type
+            self.type_map
+                .insert(k, v)
+                .iter()
+                .for_each(|v| println!("Warn: Overriding type {v:?}"));
+        }
+
+        self
     }
 
     pub fn verify_types(&self) -> anyhow::Result<()> {

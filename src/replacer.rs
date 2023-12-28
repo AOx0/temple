@@ -1,27 +1,98 @@
 use anyhow::{anyhow, Result};
-use std::{
-    borrow::Cow,
-    fmt::Write,
-    fs::OpenOptions,
-    io::Read,
-    path::{Path, PathBuf},
-    str::FromStr,
-};
+use logos::{Logos, Span};
+use owo_colors::OwoColorize;
+use std::{borrow::Cow, fmt::Write, path::Path};
 
-use crate::{delimit::Delimiters, values::Values};
+use crate::{delimit::Delimiters, error, values::Values};
 
-pub struct Contents {
-    pub contents: String,
-    pub origin: PathBuf,
+pub struct ContentsLexer<'i> {
+    pub in_delimiter: bool,
+    pub indicators: Delimiters<'i>,
+    pub origin: &'i Path,
+    pub state: logos::Lexer<'i, Type<'i>>,
+    pub content: &'i str,
+    pub next: Option<(Result<Type<'i>, anyhow::Error>, Span)>,
+    pub returned_raw: bool,
 }
 
-impl FromStr for Contents {
-    type Err = ();
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        Ok(Contents {
-            contents: s.to_owned(),
-            origin: PathBuf::new(),
+#[derive(Logos, Debug, PartialEq, Clone, Copy)]
+#[logos(skip r"[ \t\n\f]+")]
+pub enum Type<'i> {
+    #[regex("[+-]?[0-9]*[.][0-9]*", |lex| format!("{num}0", num = lex.slice()).parse().ok())]
+    FNumber(f64),
+
+    #[regex("[+-][1-9][0-9]*", |lex| lex.slice().parse().ok())]
+    SNumber(isize),
+
+    #[regex("0", |_| 0)]
+    #[regex("[1-9][0-9]*", |lex| lex.slice().parse().ok())]
+    UNumber(usize),
+
+    #[regex(r#""[^"]*""#, |lex| lex.slice().trim_matches('"'))]
+    #[regex(r#"'[^']*'"#, |lex| lex.slice().trim_matches('\''))]
+    String(&'i str),
+
+    #[regex(r#"(?i:false)"#, |_| false)]
+    #[regex(r#"(?i:true)"#, |_| true)]
+    Bool(bool),
+
+    #[token("]")]
+    SqClose,
+
+    #[token("[")]
+    SqOpen,
+
+    #[regex("(?i:if)")]
+    KwIf,
+    #[regex("(?i:for)")]
+    KwFor,
+    #[regex("(?i:in)")]
+    KwIn,
+    #[token("==")]
+    Eq,
+    #[regex("(?i:[a-z][_a-z0-9]*)", priority = 1)]
+    Ident(&'i str),
+    DelimitOpen,
+    DelimitClose,
+    #[regex("#[^\n]*", |lex| lex.slice())]
+    Comment(&'i str),
+    Raw(&'i str),
+
+    #[regex(r##"[^ \t\n\f][^ \t\n\f]"##, |lex| lex.slice(), priority = 0)]
+    PotentialDelim(&'i str),
+}
+
+impl<'i> ContentsLexer<'i> {
+    pub fn new(s: &'i str, path: &'i Path, config: &'i Values) -> anyhow::Result<Self> {
+        Ok(ContentsLexer {
+            next: None,
+            content: s,
+            in_delimiter: false,
+            indicators: config
+                .value_map
+                .get("temple_delimiters")
+                .ok_or(anyhow!(
+                    "Delimiters must be set with the identifier 'temple_delimiters'"
+                ))?
+                .try_into()?,
+            state: Type::lexer(s),
+            origin: path,
+            returned_raw: true,
         })
+    }
+}
+
+impl<'i> std::ops::Deref for ContentsLexer<'i> {
+    type Target = logos::Lexer<'i, Type<'i>>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.state
+    }
+}
+
+impl<'i> std::ops::DerefMut for ContentsLexer<'i> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.state
     }
 }
 
@@ -60,66 +131,150 @@ impl Replaced<'_> {
     }
 }
 
-impl Contents {
-    pub fn from_file(path: &Path) -> Result<Contents> {
-        OpenOptions::new()
-            .read(true)
-            .open(path)
-            .map(|mut f| {
-                let mut contents = String::new();
-                f.read_to_string(&mut contents)
-                    .is_ok()
-                    .then_some(Contents {
-                        contents,
-                        origin: path.to_path_buf(),
-                    })
-                    .ok_or(anyhow!("Failed to read from file {}", path.display()))
-            })
-            .map_err(|err| anyhow!("{}", err))?
+pub struct Location(Span, usize);
+
+impl From<(Span, usize)> for Location {
+    fn from((span, line): (Span, usize)) -> Self {
+        Location(span, line)
     }
 }
 
-impl Contents {
-    pub fn replace<'a>(&'a mut self, config: &'a Values) -> Result<Replaced<'a>> {
-        let indicators: Delimiters<'_> = config
-            .value_map
-            .get("temple_delimiters")
-            .ok_or(anyhow!(
-                "Delimiters must be set with the identifier 'temple_delimiters'"
-            ))?
-            .try_into()?;
+impl std::fmt::Display for Location {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}:{}-{}", self.1, self.0.start, self.0.end)
+    }
+}
 
-        let mut result = Vec::with_capacity(200);
-        let mut last_i = 0;
+struct Underlined(Span);
 
-        if !(indicators.find_start(&self.contents, 0).is_some()
-            && indicators.find_end(&self.contents, 0).is_some())
-        {
-            return Ok(Replaced(vec![Cow::Borrowed(&self.contents[..])]));
+impl std::fmt::Display for Underlined {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let span = self.0.clone();
+
+        for _ in 0..(span.start - 1) {
+            write!(f, " ")?;
         }
 
-        let (start_size, end_size) = indicators.sizes();
+        write!(
+            f,
+            "{}",
+            "^".repeat(span.end - span.start)
+                .if_supports_color(owo_colors::Stream::Stdout, |s| {
+                    s.style(owo_colors::Style::new().bold().yellow())
+                }),
+        )
+    }
+}
 
-        while let Some(start) = indicators
-            .find_start(&self.contents, last_i)
-            .map(|s| s + last_i)
-        {
-            if let Some(end) = indicators.find_end(&self.contents, start) {
-                result.push(Cow::Borrowed(&self.contents[last_i..start]));
-                let key = &self.contents[start + start_size..start + end].trim();
+impl ContentsLexer<'_> {
+    fn get_line(&self, line: usize) -> &str {
+        self.content.lines().nth(line - 1).unwrap_or_default()
+    }
 
-                // match keys.get_match(key) {
-                //     Some(r) => result.push(Cow::Borrowed(r)),
-                //     None => return Err(anyhow!("No key {key} found in {}", self.origin.display())),
-                // }
-                crate::trace!("Found delimiter with text {} inside", key);
+    fn error_at(&self, location: Location, msg: impl Into<String>) -> String {
+        format!(
+            "{msg}\n   {arrow}{path}:{line}:{start}\n{empty_pipe}\n{bline} {contents}\n{empty_pipe} {underline}\n{empty_pipe}",
+            msg = msg.into(),
+            arrow = "--> ".if_supports_color(owo_colors::Stream::Stdout, |s| s
+                .style(owo_colors::Style::new().bold().blue())),
+            empty_pipe = format!("{: >3} |", "")
+                .if_supports_color(owo_colors::Stream::Stdout, |s| s
+                .style(owo_colors::Style::new().bold().blue())),
+            bline = format!("{line: >3} |", line = location.1)
+                .if_supports_color(owo_colors::Stream::Stdout, |s| s
+                .style(owo_colors::Style::new().bold().blue())),
+            path = self.origin.display(),
+            line = location.1,
+            start = location.0.start,
+            contents = self.get_line(location.1),
+            underline = Underlined(location.0.clone())
+        )
+    }
 
-                last_i = start + end + end_size;
+    #[must_use]
+    pub fn get_location(&self, span: Span) -> Location {
+        let mut line = 1;
+        let mut col = 1;
+        for i in 0..span.start {
+            if self
+                .content
+                .chars()
+                .nth(i)
+                .expect("Logos returns valid spans always")
+                == '\n'
+            {
+                line += 1;
+                col = 1;
+            } else {
+                col += 1;
             }
         }
 
-        result.push(Cow::Borrowed(&self.contents[last_i..]));
+        (col..col + (span.end - span.start), line).into()
+    }
+}
 
-        Ok(Replaced(result))
+impl<'i> Iterator for ContentsLexer<'i> {
+    type Item = Result<Type<'i>, anyhow::Error>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.returned_raw = false;
+
+        if self.state.remainder().is_empty() {
+            return None;
+        }
+
+        if self.in_delimiter {
+            let next = self
+                .state
+                .next()
+                .as_mut()
+                .map(|v| v.map_err(|()| anyhow!("")));
+
+            if matches!(next, Some(Ok(Type::PotentialDelim(k))) if k == &self.indicators.delimiters().0[..2])
+                && self
+                    .remainder()
+                    .starts_with(&self.indicators.delimiters().0[2..])
+            {
+                let n = self.indicators.delimiters().0.len() - 2;
+                self.bump(n);
+                Some(Ok(Type::DelimitOpen))
+            } else if matches!(next, Some(Ok(Type::PotentialDelim(k))) if k == &self.indicators.delimiters().1[..2])
+                && self
+                    .remainder()
+                    .starts_with(&self.indicators.delimiters().1[2..])
+            {
+                let n = self.indicators.delimiters().1.len() - 2;
+                self.bump(n);
+                self.in_delimiter = false;
+                Some(Ok(Type::DelimitClose))
+            } else {
+                next
+            }
+        } else if let Some(n) = self.indicators.find_start(self.remainder(), 0) {
+            if self.indicators.find_end(self.remainder(), n).is_none() {
+                let mut span = self.span();
+
+                span.start = n;
+                span.end = span.start + self.indicators.0.len();
+
+                return Some(Err(anyhow!(self.error_at(
+                    self.get_location(span),
+                    format!("Unclosed delimiter {}", self.indicators.0 .0),
+                ))));
+            }
+
+            let raw = &self.remainder()[..n];
+            self.in_delimiter = true;
+
+            self.bump(raw.len());
+
+            Some(Ok(Type::Raw(raw)))
+        } else {
+            let rem = self.remainder();
+            self.bump(rem.len());
+
+            Some(Ok(Type::Raw(rem)))
+        }
     }
 }

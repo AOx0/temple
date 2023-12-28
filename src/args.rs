@@ -77,7 +77,7 @@ pub enum Commands {
     },
 }
 
-#[derive(Debug, Subcommand, Clone, Copy)]
+#[derive(Debug, Subcommand, Clone, Copy, PartialEq)]
 pub enum InitOpt {
     /// Create the global temple configuration dir
     Global,
