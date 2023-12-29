@@ -10,6 +10,12 @@ use temple::{
     values::Values,
 };
 
+fn name_is_valid(name: &str) -> Result<()> {
+    (name.is_ascii() && !name.contains(':'))
+        .then_some(())
+        .ok_or(anyhow!("Invalid name: '{name}'"))
+}
+
 fn app(args: &Args) -> Result<()> {
     let temple_dirs = TempleDirs::default_paths()
         .map_err(|e| anyhow!("Failed getting default directories: {e}"))?;
@@ -74,13 +80,11 @@ If this is your first temple execution you can create a new global config with t
                 temple_dirs.create_config_file(&current_dir).map(|_| ())
             }
         },
-        Commands::Create { ref sub } => {
-            use temple::args::CreateOpts;
+        Commands::Create { ref template_name } => {
+            let is_global = !template_name.starts_with("local:");
+            let name = template_name.trim_start_matches("local:");
 
-            let is_global = matches!(sub, CreateOpts::Global { .. });
-            let name = match sub {
-                CreateOpts::Global { name } | CreateOpts::Local { name } => name,
-            };
+            name_is_valid(name)?;
 
             let path = if is_global {
                 temple_dirs.global_config()
@@ -127,6 +131,8 @@ If this is your first temple execution you can create a new global config with t
         Commands::Remove { ref template_name } => {
             let is_local = template_name.starts_with("local:");
             let name = template_name.trim_start_matches("local:");
+
+            name_is_valid(name)?;
 
             let path = if !is_local {
                 temple_dirs.global_config()

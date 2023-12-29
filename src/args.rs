@@ -47,13 +47,13 @@ pub enum Commands {
     },
     /// Create a new empty template. You can then place files in it
     Create {
-        #[clap(subcommand)]
-        sub: CreateOpts,
+        /// Name of the template
+        template_name: String,
     },
     /// Remove an existing template
     Remove {
         /// Name of the template
-        template_name: String
+        template_name: String,
     },
     /// List existing templates
     List {
@@ -81,20 +81,6 @@ pub enum Commands {
     Deinit {
         #[clap(subcommand)]
         sub: DeinitOpt,
-    },
-}
-
-#[derive(Debug, Subcommand, Clone, PartialEq)]
-pub enum CreateOpts {
-    /// Create a new empty global template
-    Global {
-        /// The name for the new template
-        name: String,
-    },
-    /// Create a new empty local template
-    Local {
-        /// The name for the new template
-        name: String,
     },
 }
 
