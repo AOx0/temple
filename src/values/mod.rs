@@ -7,7 +7,7 @@ use std::{
     ops::{Deref, DerefMut},
     path::Path,
 };
-use tera::{Map, Value};
+use tera::Value;
 use token::{Logos, Variant};
 
 use crate::{values::token::Tokens, warn};

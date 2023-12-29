@@ -17,7 +17,8 @@ impl Args {
             Commands::Init { .. }
             | Commands::Deinit { .. }
             | Commands::New { .. }
-            | Commands::DebugConfig { .. } => false,
+            | Commands::DebugConfig { .. }
+            | Commands::Create { .. } => false,
         }
     }
 }
@@ -48,6 +49,11 @@ pub enum Commands {
         #[clap(long, short)]
         overwrite: bool,
     },
+    /// Create a new empty template. You can then place files in it
+    Create {
+        #[clap(subcommand)]
+        sub: CreateOpts,
+    },
     /// List existing templates
     List {
         /// Show templates in a single space separated list
@@ -74,6 +80,20 @@ pub enum Commands {
     Deinit {
         #[clap(subcommand)]
         sub: DeinitOpt,
+    },
+}
+
+#[derive(Debug, Subcommand, Clone, PartialEq)]
+pub enum CreateOpts {
+    /// Create a new empty global template
+    Global {
+        /// The name for the new template
+        name: String,
+    },
+    /// Create a new empty local template
+    Local {
+        /// The name for the new template
+        name: String,
     },
 }
 

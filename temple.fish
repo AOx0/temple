@@ -1,4 +1,4 @@
-set -l commands list new init deinit help 'debug-config'
+set -l commands list new init deinit help create 'debug-config'
 set -l templates (temple list -se 2> /dev/null | tr " " "\n" || echo "")
 
 function __fish_temple_contains_temple_new
@@ -24,7 +24,7 @@ function __fish_temple_complete_templates
 end
 
 function __fish_temple_help_subcommand_completion
-    set -l commands list new init deinit help 'debug-config'
+    set -l commands list new init deinit help create 'debug-config'
     set -l cmd_args (commandline -opc)
 
     if test (count $cmd_args) -eq 2
@@ -58,6 +58,7 @@ complete -c temple -n "not __fish_seen_subcommand_from $commands" -a new -d 'Cre
 complete -c temple -n "not __fish_seen_subcommand_from $commands" -a list -d 'List existing templates'
 complete -c temple -n "not __fish_seen_subcommand_from $commands" -a init -d 'Initialize a template config directory'
 complete -c temple -n "not __fish_seen_subcommand_from $commands" -a deinit -d 'Remove a temple config directory'
+complete -c temple -n "not __fish_seen_subcommand_from $commands" -a create -d 'Create a new empty template. You can then place files in it'
 complete -c temple -n "not __fish_seen_subcommand_from $commands" -a debug-config -d 'Parse and dump objects to stdout'
 complete -c temple -n "not __fish_seen_subcommand_from $commands" -a help -d 'Print this message or the help of the given subcommand(s)'
 
@@ -69,6 +70,12 @@ complete -c temple -n "__fish_seen_subcommand_from init; and not __fish_seen_sub
 # deinit
 complete -c temple -n "__fish_seen_subcommand_from deinit; and not __fish_seen_subcommand_from global local" -a global -d 'Create the global temple configuration dir'
 complete -c temple -n "__fish_seen_subcommand_from deinit; and not __fish_seen_subcommand_from global local" -a local -d 'Create a new temple local configuration dir in the current dir'
+
+# create
+complete -c temple -n "__fish_seen_subcommand_from create; and not __fish_seen_subcommand_from global local" -a global -d 'Create a new empty global template'
+complete -c temple -n "__fish_seen_subcommand_from create; and not __fish_seen_subcommand_from global local" -a local -d 'Create a new empty local template'
+complete -c temple -n "__fish_seen_subcommand_from create; and __fish_seen_subcommand_from global local" -F
+
 
 # debug
 complete -c temple -n "__fish_seen_subcommand_from debug-config" -F

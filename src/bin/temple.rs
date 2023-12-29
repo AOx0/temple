@@ -1,4 +1,4 @@
-use anyhow::{anyhow, ensure, Context, Result};
+use anyhow::{anyhow, bail, ensure, Context, Result};
 use clap::Parser;
 use std::{path::PathBuf, process::ExitCode};
 use temple::{
@@ -72,6 +72,56 @@ If this is your first temple execution you can create a new global config with t
                 temple_dirs.create_config_file(&current_dir).map(|_| ())
             }
         },
+        Commands::Create { ref sub } => {
+            use temple::args::CreateOpts;
+
+            let is_global = matches!(sub, CreateOpts::Global { .. });
+            let name = match sub {
+                CreateOpts::Global { name } | CreateOpts::Local { name } => name,
+            };
+
+            let path = if is_global {
+                temple_dirs.global_config()
+            } else if let Some(path) = temple_dirs.local_config() {
+                path
+            } else {
+                bail!("Tried to create a new local template but there is no local temple folder");
+            }
+            .join(name);
+
+            ensure!(
+                !path.exists(),
+                "A {} template with the name '{}' already exists",
+                if is_global { "global" } else { "local" },
+                name
+            );
+
+            // To avoid the user doing unwanted operations we prompt for confirmation with
+            // the path visible to the user
+            if !is_global && !confirm_creation(&path) {
+                return Ok(());
+            }
+
+            info!("Creating new template directory: {}", path.display());
+
+            std::fs::create_dir_all(&path)
+                .map_err(|err| anyhow!("Failed creating template directory: {err}"))?;
+
+            let config = path.join("config.tpl");
+
+            info!(
+                "Creating empty template configuration at {}",
+                config.display()
+            );
+
+            std::fs::OpenOptions::new()
+                .write(true)
+                .create_new(true)
+                .open(&config)
+                .map_err(|err| anyhow!("Failed creating configuration file: {err}"))?;
+
+            Ok(())
+        }
         Commands::Deinit { sub } => match sub {
             temple::args::DeinitOpt::Global => {
                 let path = temple_dirs.global_config();
@@ -136,16 +186,16 @@ If this is your first temple execution you can create a new global config with t
             })
         }
         Commands::New { .. } => {
-            let globals = TempleDirs::get_templates_in_dir(temple_dirs.global_config())?;
-            let locals = if let Some(l) = temple_dirs
-                .local_config()
-                .as_ref()
-                .map(|c| TempleDirs::get_templates_in_dir(c))
-            {
-                l?
-            } else {
-                Vec::default()
-            };
+            // let globals = TempleDirs::get_templates_in_dir(temple_dirs.global_config())?;
+            // let locals = if let Some(l) = temple_dirs
+            //     .local_config()
+            //     .as_ref()
+            //     .map(|c| TempleDirs::get_templates_in_dir(c))
+            // {
+            //     l?
+            // } else {
+            //     Vec::default()
+            // };
 
             let get_config_path = |path: &std::path::Path| {
                 if path.join("config.tpl").exists() {
@@ -156,12 +206,12 @@ If this is your first temple execution you can create a new global config with t
             };
 
             let global_config = get_config_path(temple_dirs.global_config());
-            let local_config = temple_dirs.local_config().map(|p| get_config_path(p));
+            let local_config = temple_dirs.local_config().map(get_config_path);
 
             let global_config_str = std::fs::read_to_string(&global_config)?;
-            let local_config_str = local_config.as_ref().map(|v| std::fs::read_to_string(v));
+            let local_config_str = local_config.as_ref().map(std::fs::read_to_string);
 
-            let mut global_config =
+            let global_config =
                 Values::from_str(&global_config_str, &global_config).map_err(|err| {
                     eprintln!("{err:?}");
                     anyhow!("Failed to parse values from {}", global_config.display())
@@ -183,7 +233,7 @@ If this is your first temple execution you can create a new global config with t
             // let contents = " Hola ma llamo {{ name }} y {{ if xp == 4 }}soy nuevo{{ else }}soy experimentado{{}} en esto";
             let contents = " Hola ma llamo {{ if name }} mas texto {{}} {{";
 
-            let mut path = PathBuf::default();
+            let path = PathBuf::default();
             let mut contents = ContentsLexer::new(contents, &path, &config)?;
 
             while let Some(token) = contents.next() {
@@ -208,13 +258,19 @@ If this is your first temple execution you can create a new global config with t
 
             Ok(())
         }
-
-        _ => unimplemented!(),
     }
 }
 
 fn confirm_remove(path: &std::path::Path) -> bool {
     let ans = inquire::Confirm::new(&format!("Do you want to remove {}?", path.display()))
+        .with_default(false)
+        .prompt();
+
+    ans.unwrap()
+}
+
+fn confirm_creation(path: &std::path::Path) -> bool {
+    let ans = inquire::Confirm::new(&format!("Do you want to create {}?", path.display()))
         .with_default(false)
         .prompt();
 

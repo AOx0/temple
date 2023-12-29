@@ -3,7 +3,7 @@ use logos::{Logos, Span};
 use owo_colors::OwoColorize;
 use std::{borrow::Cow, fmt::Write, path::Path, sync::OnceLock};
 
-use crate::{delimit::Delimiters, error, values::Values};
+use crate::{delimit::Delimiters, values::Values};
 
 pub struct ContentsLexer<'i> {
     pub in_delimiter: bool,
@@ -200,6 +200,7 @@ impl ContentsLexer<'_> {
         self.content.lines().nth(line - 1).unwrap_or_default()
     }
 
+    #[must_use]
     pub fn span(&self) -> Span {
         if self.returned_raw {
             let mut span = self.state.span();
@@ -211,6 +212,7 @@ impl ContentsLexer<'_> {
         }
     }
 
+    #[must_use]
     pub fn slice(&self) -> &str {
         if self.returned_raw {
             &self.state.slice()[self.indicators.delimiters().1.len()..]
@@ -219,6 +221,7 @@ impl ContentsLexer<'_> {
         }
     }
 
+    #[allow(clippy::needless_pass_by_value)]
     fn error_at(&self, location: Location, msg: impl Into<String>) -> String {
         format!(
             "{msg}\n   {arrow}{path}:{line}:{start}\n{empty_pipe}\n{bline} {contents}\n{empty_pipe} {underline}",

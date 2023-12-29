@@ -218,11 +218,11 @@ impl TempleDirs {
                         "{}",
                         iter.iter()
                             .map(|a| format!(
-                                "{dotchr}{tename:?}{tepath}{spacer}",
+                                "{dotchr}{tename}{tepath}{spacer}",
                                 dotchr = if long { "    " } else { "" },
                                 tename = (long || i == 0)
                                     .then_some(a.name().to_string())
-                                    .unwrap_or_else(|| format!("local:{:?}", a.name())),
+                                    .unwrap_or_else(|| format!("local:{}", a.name())),
                                 tepath = path
                                     .then_some(format!(
                                         "\t'{}'",
@@ -394,9 +394,12 @@ impl TempleDirs {
 
         for entry in path.read_dir()? {
             let entry = entry?;
-            let root = entry.path().join(".temple");
+            let root = entry.path().join("config.tpl");
+            let root2 = entry.path().join("config.temple");
 
-            if entry.file_type()?.is_dir() && (root.exists() && root.is_file()) {
+            if entry.file_type()?.is_dir()
+                && ((root.exists() && root.is_file()) || (root2.exists() && root2.is_file()))
+            {
                 res.push(Template(entry.path()));
             }
         }
