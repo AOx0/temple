@@ -3,7 +3,7 @@ use clap::Parser;
 use std::{path::PathBuf, process::ExitCode};
 use temple::{
     args::{Args, Commands, InitOpt},
-    config::TempleDirs,
+    config::{Prefer, TempleDirs},
     error, info,
     replacer::ContentsLexer,
     trace,
@@ -223,17 +223,12 @@ If this is your first temple execution you can create a new global config with t
                 anyhow!("Invalid types")
             })
         }
-        Commands::New { .. } => {
-            // let globals = TempleDirs::get_templates_in_dir(temple_dirs.global_config())?;
-            // let locals = if let Some(l) = temple_dirs
-            //     .local_config()
-            //     .as_ref()
-            //     .map(|c| TempleDirs::get_templates_in_dir(c))
-            // {
-            //     l?
-            // } else {
-            //     Vec::default()
-            // };
+        Commands::New {
+            ref template_name, ..
+        } => {
+            let templates = temple_dirs
+                .get_available_templates()
+                .map_err(|err| anyhow!("Failed to get templates: {err}"))?;
 
             let get_config_path = |path: &std::path::Path| {
                 if path.join("config.tpl").exists() {
@@ -268,6 +263,21 @@ If this is your first temple execution you can create a new global config with t
 
             let config = global_config.stash(local_config);
 
+            let prefers = if template_name.starts_with("local:") {
+                Prefer::Local
+            } else {
+                Prefer::Global
+            };
+
+            let name = template_name.trim_start_matches("local:");
+            name_is_valid(name)?;
+
+            let template = templates
+                .get_named(name, &prefers)
+                .ok_or(anyhow!("Template '{name}' does not exist"))?;
+
+            trace!("Working with template {:?}", template);
+
             // let contents = " Hola ma llamo {{ name }} y {{ if xp == 4 }}soy nuevo{{ else }}soy experimentado{{}} en esto";
             let contents = " Hola ma llamo {{ if name }} mas texto {{}} {{";
 
@@ -287,12 +297,6 @@ If this is your first temple execution you can create a new global config with t
                     contents.slice(),
                 )
             }
-
-            let templates = temple_dirs
-                .get_available_templates()
-                .map_err(|e| anyhow!("Failed to get templates: {e}"))?;
-
-            println!("{templates:?}");
 
             Ok(())
         }
