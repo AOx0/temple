@@ -102,31 +102,40 @@ If this is your first temple execution you can create a new global config with t
                 }
             }
         },
-        Commands::DebugConfig { ref path } => {
-            trace!("Reading: {}", path.display());
+        Commands::DebugConfig { ref paths } => {
+            let mut result_value = Values::default();
 
-            let contents = std::fs::read_to_string(path)?;
+            for path in paths {
+                info!("Reading: {}", path.display());
 
-            let values = Values::from_str(&contents, path).map_err(|err| {
-                eprintln!("{err:?}");
-                anyhow!("Failed to parse values from {}", path.display())
-            })?;
+                let contents = std::fs::read_to_string(path)?;
 
-            println!("{:#?}", values);
+                let values = Values::from_str(&contents, path).map_err(|err| {
+                    eprintln!("{err:?}");
+                    anyhow!("Failed to parse values from {}", path.display())
+                })?;
 
-            values.verify_types().map_err(|err| {
+                info!("{}:\n{:#?}", path.display(), values);
+
+                values.verify_types().map_err(|err| {
+                    error!(err);
+                    anyhow!("Invalid types")
+                })?;
+
+                result_value = result_value.stash(values);
+                result_value.verify_types().map_err(|err| {
+                    error!(err);
+                    anyhow!("Invalid types")
+                })?;
+            }
+
+            info!("End result:\n{:#?}", result_value);
+            result_value.verify_types().map_err(|err| {
                 error!(err);
                 anyhow!("Invalid types")
             })
         }
-        Commands::New {
-            ref template_name,
-            ref project_name,
-            ref cli_keys,
-            ref local,
-            ref in_place,
-            ref overwrite,
-        } => {
+        Commands::New { .. } => {
             let globals = TempleDirs::get_templates_in_dir(temple_dirs.global_config())?;
             let locals = if let Some(l) = temple_dirs
                 .local_config()

@@ -3,7 +3,7 @@ mod token;
 
 use anyhow::{anyhow, ensure};
 use std::{
-    collections::HashMap,
+    collections::{hash_map::Entry, HashMap},
     ops::{Deref, DerefMut},
     path::Path,
 };
@@ -150,21 +150,21 @@ impl Type {
 }
 
 impl Values {
+    #[must_use]
     pub fn stash(mut self, other: Self) -> Self {
         for (k, v) in other.value_map.0 {
-            //TODO: Stash data type
             self.value_map
                 .insert(k, v)
                 .iter()
-                .for_each(|v| println!("Warn: Overriding value {v:?}"));
+                .for_each(|v| warn!("Overriding value with {:?}", v));
         }
 
         for (k, v) in other.type_map.0 {
-            //TODO: Stash data type
-            self.type_map
-                .insert(k, v)
-                .iter()
-                .for_each(|v| println!("Warn: Overriding type {v:?}"));
+            if let Entry::Vacant(e) = self.type_map.entry(k.clone()) {
+                e.insert(v);
+            } else {
+                warn!("Using previously defined data type for value {}", k);
+            }
         }
 
         self

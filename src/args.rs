@@ -63,7 +63,7 @@ pub enum Commands {
     /// Parse and dump objects to stdout
     DebugConfig {
         /// The path to the configuration file
-        path: PathBuf,
+        paths: Vec<PathBuf>,
     },
     /// Initialize temple configuration directory
     Init {
