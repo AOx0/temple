@@ -86,7 +86,7 @@ pub fn try_type_from(tokens: &mut Tokens<'_>) -> Result<Type, anyhow::Error> {
 }
 
 pub fn parse_object_type(tokens: &mut Tokens<'_>) -> Result<Type, anyhow::Error> {
-    if matches!(tokens.peek().token, Variant::CyOpen) {
+    if matches!(tokens.peek().map(|e| e.token), Some(Variant::CyOpen)) {
         tokens.step();
 
         if let &[Variant::CyClose, ..] = tokens.tokens() {
@@ -113,10 +113,10 @@ pub fn parse_object_type(tokens: &mut Tokens<'_>) -> Result<Type, anyhow::Error>
             }
 
             ensure!(
-                tokens.peek().token == &Variant::CyClose,
+                tokens.peek().map(|v| v.token) == Some(&Variant::CyClose),
                 aerr!(tokens.error_current_span(format!(
                     "Expected closing '}}' in Object type declaration but found {:?}",
-                    tokens.peek().token
+                    tokens.peek().map(|v| v.token)
                 )))
             );
 
@@ -137,7 +137,7 @@ pub fn parse_array_type(tokens: &mut Tokens<'_>) -> Result<Type, anyhow::Error> 
         let typ = try_type_from(tokens)?;
 
         ensure!(
-            tokens.peek().token == &Variant::SqClose,
+            tokens.peek().map(|v| v.token) == Some(&Variant::SqClose),
             aerr!(tokens
                 .error_current_span("Expected ']' after type {typ} in Array type declaration"))
         );
@@ -259,10 +259,10 @@ pub fn parse_object(tokens: &mut Tokens<'_>) -> Result<Value, anyhow::Error> {
             }
 
             ensure!(
-                tokens.peek().token == &Variant::CyClose,
+                tokens.peek().map(|e| e.token) == Some(&Variant::CyClose),
                 aerr!(tokens.error_current_span(format!(
                     "Expected closing '}}' in Object declaration but found {:?}",
-                    tokens.peek().token
+                    tokens.peek().map(|v| v.token)
                 )))
             );
 

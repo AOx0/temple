@@ -78,7 +78,11 @@ impl Tokens<'_> {
     }
 
     pub fn location(&self, cursor: usize) -> Location {
-        let span = self.span[cursor].clone();
+        let span = if let Some(loc) = self.span.get(cursor).cloned() {
+            loc
+        } else {
+            self.span[cursor - 1].clone()
+        };
         let mut line = 1;
         let mut col = 1;
         for i in 0..span.start {
@@ -105,7 +109,7 @@ impl Tokens<'_> {
             String::new()
         } else {
             format!(
-                "{msg}\n   {arrow}{path}:{line}:{start}\n{empty_pipe}\n{bline} {contents}\n{empty_pipe} {underline}\n{empty_pipe}",
+                "{msg}\n   {arrow}{path}:{line}:{start}\n{empty_pipe}\n{bline} {contents}\n{empty_pipe} {underline}",
                 msg = msg.into(),
                 arrow = "--> ".if_supports_color(owo_colors::Stream::Stdout, |s| s
                     .style(owo_colors::Style::new().bold().blue())),
@@ -143,8 +147,12 @@ impl Tokens<'_> {
     }
 
     pub fn get_ident(&self) -> Option<String> {
-        if let &Variant::Ident(s) = self.peek().token {
-            Some(s.to_string())
+        if let Some(peek) = self.peek() {
+            if let &Variant::Ident(s) = peek.token {
+                Some(s.to_string())
+            } else {
+                None
+            }
         } else {
             None
         }
@@ -161,10 +169,14 @@ impl Tokens<'_> {
         })
     }
 
-    pub fn peek(&self) -> Peek<'_, '_> {
-        Peek {
-            token: &self.token[self.cursor],
-            span: &self.span[self.cursor],
+    pub fn peek(&self) -> Option<Peek<'_, '_>> {
+        if self.is_empty() {
+            None
+        } else {
+            Some(Peek {
+                token: &self.token[self.cursor],
+                span: &self.span[self.cursor],
+            })
         }
     }
 

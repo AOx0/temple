@@ -1,7 +1,7 @@
 use anyhow::{anyhow, Result};
 use logos::{Logos, Span};
 use owo_colors::OwoColorize;
-use std::{borrow::Cow, fmt::Write, path::Path};
+use std::{borrow::Cow, fmt::Write, path::Path, sync::OnceLock};
 
 use crate::{delimit::Delimiters, error, values::Values};
 
@@ -13,10 +13,16 @@ pub struct ContentsLexer<'i> {
     pub content: &'i str,
     pub next: Option<(Result<Type<'i>, anyhow::Error>, Span)>,
     pub returned_raw: bool,
+    pub returned_close: bool,
 }
 
+static DELIMITERS: OnceLock<(String, String)> = OnceLock::new();
+
 #[derive(Logos, Debug, PartialEq, Clone, Copy)]
-#[logos(skip r"[ \t\n\f]+")]
+#[logos(
+    error = (),
+    skip r"[ \t\n\f]+"
+)]
 pub enum Type<'i> {
     #[regex("[+-]?[0-9]*[.][0-9]*", |lex| format!("{num}0", num = lex.slice()).parse().ok())]
     FNumber(f64),
@@ -58,26 +64,55 @@ pub enum Type<'i> {
     Comment(&'i str),
     Raw(&'i str),
 
-    #[regex(r##"[^ \t\n\f][^ \t\n\f]"##, |lex| lex.slice(), priority = 0)]
-    PotentialDelim(&'i str),
+    #[regex(r##"[^ \t\n\f][^ \t\n\f]"##, delimiter, priority = 0)]
+    PotentialDelim(DelimiterType),
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DelimiterType {
+    DelimitOpen,
+    DelimitClose,
+}
+
+fn delimiter<'i>(lex: &mut logos::Lexer<'i, Type<'i>>) -> logos::FilterResult<DelimiterType, ()> {
+    let (ref start, ref end) = DELIMITERS.get().expect("Set on init");
+    if lex.slice().starts_with(&start[..2]) && lex.remainder().starts_with(&start[2..]) {
+        lex.bump(start.len() - 2);
+        logos::FilterResult::Emit(DelimiterType::DelimitOpen)
+    } else if lex.slice().starts_with(&end[..2]) && lex.remainder().starts_with(&end[2..]) {
+        lex.bump(end.len() - 2);
+        logos::FilterResult::Emit(DelimiterType::DelimitClose)
+    } else {
+        logos::FilterResult::Error(())
+    }
 }
 
 impl<'i> ContentsLexer<'i> {
     pub fn new(s: &'i str, path: &'i Path, config: &'i Values) -> anyhow::Result<Self> {
+        let indicators: Delimiters<'_> = config
+            .value_map
+            .get("temple_delimiters")
+            .ok_or(anyhow!(
+                "Delimiters must be set with the identifier 'temple_delimiters'"
+            ))?
+            .try_into()?;
+
+        DELIMITERS
+            .set((
+                indicators.delimiters().0.to_owned(),
+                indicators.delimiters().1.to_owned(),
+            ))
+            .map_err(|e| anyhow!("Failed setting OnceLock: {e:?}"))?;
+
         Ok(ContentsLexer {
             next: None,
             content: s,
             in_delimiter: false,
-            indicators: config
-                .value_map
-                .get("temple_delimiters")
-                .ok_or(anyhow!(
-                    "Delimiters must be set with the identifier 'temple_delimiters'"
-                ))?
-                .try_into()?,
+            indicators,
             state: Type::lexer(s),
             origin: path,
-            returned_raw: true,
+            returned_raw: false,
+            returned_close: false,
         })
     }
 }
@@ -145,20 +180,14 @@ impl std::fmt::Display for Location {
     }
 }
 
-struct Underlined(Span);
+struct Underlined(usize);
 
 impl std::fmt::Display for Underlined {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let span = self.0.clone();
-
-        for _ in 0..(span.start - 1) {
-            write!(f, " ")?;
-        }
-
         write!(
             f,
             "{}",
-            "^".repeat(span.end - span.start)
+            "^".repeat(self.0)
                 .if_supports_color(owo_colors::Stream::Stdout, |s| {
                     s.style(owo_colors::Style::new().bold().yellow())
                 }),
@@ -171,9 +200,28 @@ impl ContentsLexer<'_> {
         self.content.lines().nth(line - 1).unwrap_or_default()
     }
 
+    pub fn span(&self) -> Span {
+        if self.returned_raw {
+            let mut span = self.state.span();
+            span.start += self.indicators.delimiters().1.len();
+
+            span
+        } else {
+            self.state.span()
+        }
+    }
+
+    pub fn slice(&self) -> &str {
+        if self.returned_raw {
+            &self.state.slice()[self.indicators.delimiters().1.len()..]
+        } else {
+            self.state.slice()
+        }
+    }
+
     fn error_at(&self, location: Location, msg: impl Into<String>) -> String {
         format!(
-            "{msg}\n   {arrow}{path}:{line}:{start}\n{empty_pipe}\n{bline} {contents}\n{empty_pipe} {underline}\n{empty_pipe}",
+            "{msg}\n   {arrow}{path}:{line}:{start}\n{empty_pipe}\n{bline} {contents}\n{empty_pipe} {underline}",
             msg = msg.into(),
             arrow = "--> ".if_supports_color(owo_colors::Stream::Stdout, |s| s
                 .style(owo_colors::Style::new().bold().blue())),
@@ -187,7 +235,7 @@ impl ContentsLexer<'_> {
             line = location.1,
             start = location.0.start,
             contents = self.get_line(location.1),
-            underline = Underlined(location.0.clone())
+            underline = Underlined(self.get_line(location.1).len())
         )
     }
 
@@ -231,32 +279,19 @@ impl<'i> Iterator for ContentsLexer<'i> {
                 .as_mut()
                 .map(|v| v.map_err(|()| anyhow!("")));
 
-            if matches!(next, Some(Ok(Type::PotentialDelim(k))) if k == &self.indicators.delimiters().0[..2])
-                && self
-                    .remainder()
-                    .starts_with(&self.indicators.delimiters().0[2..])
-            {
-                let n = self.indicators.delimiters().0.len() - 2;
-                self.bump(n);
-                Some(Ok(Type::DelimitOpen))
-            } else if matches!(next, Some(Ok(Type::PotentialDelim(k))) if k == &self.indicators.delimiters().1[..2])
-                && self
-                    .remainder()
-                    .starts_with(&self.indicators.delimiters().1[2..])
-            {
-                let n = self.indicators.delimiters().1.len() - 2;
-                self.bump(n);
-                self.in_delimiter = false;
-                Some(Ok(Type::DelimitClose))
-            } else {
-                next
-            }
+            self.in_delimiter = !matches!(
+                next,
+                Some(Ok(Type::PotentialDelim(DelimiterType::DelimitClose)))
+            );
+            self.returned_close = !self.in_delimiter;
+
+            next
         } else if let Some(n) = self.indicators.find_start(self.remainder(), 0) {
             if self.indicators.find_end(self.remainder(), n).is_none() {
-                let mut span = self.span();
+                let mut span = self.state.span();
 
-                span.start = n;
-                span.end = span.start + self.indicators.0.len();
+                span.start += n;
+                span.end += self.indicators.0.len();
 
                 return Some(Err(anyhow!(self.error_at(
                     self.get_location(span),
@@ -267,10 +302,17 @@ impl<'i> Iterator for ContentsLexer<'i> {
             let raw = &self.remainder()[..n];
             self.in_delimiter = true;
 
+            if self.returned_close {
+                self.returned_raw = true;
+                self.returned_close = false;
+            }
+
             self.bump(raw.len());
 
             Some(Ok(Type::Raw(raw)))
         } else {
+            self.returned_raw = true;
+
             let rem = self.remainder();
             self.bump(rem.len());
 

@@ -172,7 +172,7 @@ If this is your first temple execution you can create a new global config with t
             let config = global_config.stash(local_config);
 
             // let contents = " Hola ma llamo {{ name }} y {{ if xp == 4 }}soy nuevo{{ else }}soy experimentado{{}} en esto";
-            let contents = " Hola ma llamo {{ if name }} mas texto {{}}";
+            let contents = " Hola ma llamo {{ if name }} mas texto {{}} {{";
 
             let mut path = PathBuf::default();
             let mut contents = ContentsLexer::new(contents, &path, &config)?;
@@ -184,7 +184,8 @@ If this is your first temple execution you can create a new global config with t
                 }
 
                 println!(
-                    "{}: {}: {token:?}",
+                    "{:?}: {}: {}: {token:?}",
+                    contents.span(),
                     contents.get_location(contents.span()),
                     contents.slice(),
                 )
