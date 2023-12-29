@@ -24,8 +24,10 @@ fn app(args: &Args) -> Result<()> {
     );
 
     if !matches!(args.command, Commands::Init { sub } if sub == InitOpt::Global) {
+        let exists = temple_dirs.global_config().exists() && temple_dirs.global_config().is_dir();
+        trace!("Checking if global configuration exists: {exists}",);
         ensure!(
-            temple_dirs.global_config().is_dir(),
+            exists,
             anyhow!(
                 r#"There was an error with the global config dir: {0}
 Are you sure it exists, its a dir, and it contains a config.tpl?
@@ -119,6 +121,36 @@ If this is your first temple execution you can create a new global config with t
                 .create_new(true)
                 .open(&config)
                 .map_err(|err| anyhow!("Failed creating configuration file: {err}"))?;
+
+            Ok(())
+        }
+        Commands::Remove { ref template_name } => {
+            let is_local = template_name.starts_with("local:");
+            let name = template_name.trim_start_matches("local:");
+
+            let path = if !is_local {
+                temple_dirs.global_config()
+            } else if let Some(path) = temple_dirs.local_config() {
+                path
+            } else {
+                bail!("Tried removing local template but there is no local template directory");
+            }
+            .join(name);
+
+            ensure!(
+                path.exists(),
+                "A {} template with the name '{}' does not exists",
+                if !is_local { "global" } else { "local" },
+                name
+            );
+
+            if !confirm_remove(&path) {
+                return Ok(());
+            }
+
+            info!("Removing template '{name}' at {}", path.display());
+
+            std::fs::remove_dir_all(&path).map_err(|err| anyhow!("Failed removing dir: {err}"))?;
 
             Ok(())
         }

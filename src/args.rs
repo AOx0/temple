@@ -13,12 +13,8 @@ impl Args {
     #[must_use]
     pub fn no_errors(&self) -> bool {
         match self.command {
-            Commands::List { errors, .. } => !errors,
-            Commands::Init { .. }
-            | Commands::Deinit { .. }
-            | Commands::New { .. }
-            | Commands::DebugConfig { .. }
-            | Commands::Create { .. } => false,
+            Commands::List { errors, .. } => errors,
+            _ => false,
         }
     }
 }
@@ -53,6 +49,11 @@ pub enum Commands {
     Create {
         #[clap(subcommand)]
         sub: CreateOpts,
+    },
+    /// Remove an existing template
+    Remove {
+        /// Name of the template
+        template_name: String
     },
     /// List existing templates
     List {
