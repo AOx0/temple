@@ -58,6 +58,8 @@ pub enum Type<'i> {
     Eq,
     #[regex("(?i:[a-z][_a-z0-9]*)", priority = 1)]
     Ident(&'i str),
+    #[regex("(?i:[a-z][_a-z0-9]*)([.](?i:[a-z][_a-z0-9]*))+", priority = 2)]
+    IdentWithField(&'i str),
     DelimitOpen,
     DelimitClose,
     #[regex("#[^\n]*", |lex| lex.slice())]

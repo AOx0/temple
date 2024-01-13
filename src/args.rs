@@ -82,6 +82,11 @@ pub enum Commands {
         #[clap(subcommand)]
         sub: DeinitOpt,
     },
+    /// Get information for a template
+    Info {
+        /// Name of the template
+        template_name: String,
+    },
 }
 
 #[derive(Debug, Subcommand, Clone, Copy, PartialEq)]

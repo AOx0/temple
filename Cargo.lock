@@ -1161,6 +1161,7 @@ dependencies = [
  "logos",
  "owo-colors",
  "tera",
+ "walkdir",
 ]
 
 [[package]]

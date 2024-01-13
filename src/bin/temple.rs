@@ -1,6 +1,6 @@
 use anyhow::{anyhow, bail, ensure, Context, Result};
 use clap::Parser;
-use std::{path::PathBuf, process::ExitCode};
+use std::{borrow::Cow, env::current_dir, path::PathBuf, process::ExitCode, str::FromStr};
 use temple::{
     args::{Args, Commands, InitOpt},
     config::{Prefer, TempleDirs},
@@ -8,12 +8,42 @@ use temple::{
     replacer::ContentsLexer,
     trace,
     values::Values,
+    warn,
 };
+use walkdir::WalkDir;
+
+fn get_config_path(path: &std::path::Path) -> PathBuf {
+    if path.join("config.tpl").exists() {
+        path.join("config.tpl")
+    } else {
+        path.join("config.temple")
+    }
+}
 
 fn name_is_valid(name: &str) -> Result<()> {
     (name.is_ascii() && !name.contains(':'))
         .then_some(())
         .ok_or(anyhow!("Invalid name: '{name}'"))
+}
+
+fn get_config_values(path: &std::path::Path, buff: &mut String) -> Result<Values> {
+    use std::io::Read;
+
+    buff.clear();
+
+    let mut file = std::fs::OpenOptions::new()
+        .read(true)
+        .open(path)
+        .map_err(|err| anyhow!("Error opening file {path}: {err}", path = path.display()))?;
+
+    file.read_to_string(buff)
+        .map_err(|err| anyhow!("Error reading file {path}: {err}", path = path.display()))?;
+
+    let str = std::fs::read_to_string(path)?;
+    Values::from_str(&str, path).map_err(|err| {
+        eprintln!("{err:?}");
+        anyhow!("Failed to parse values from {}", path.display())
+    })
 }
 
 fn app(args: &Args) -> Result<()> {
@@ -48,6 +78,40 @@ If this is your first temple execution you can create a new global config with t
 
     match args.command {
         Commands::List { .. } => temple_dirs.display_available_templates(&args.command),
+        Commands::Info { ref template_name } => {
+            let is_global = !template_name.starts_with("local:");
+            let name = template_name.trim_start_matches("local:");
+
+            name_is_valid(name)?;
+
+            let prefers = if !is_global {
+                Prefer::Local
+            } else {
+                Prefer::Global
+            };
+
+            let mut buffer = String::new();
+
+            let templates = temple_dirs
+                .get_available_templates()
+                .map_err(|err| anyhow!("Failed to get templates: {err}"))?;
+
+            let template = templates
+                .get_named(name, &prefers)
+                .ok_or(anyhow!("Template '{name}' does not exist"))?;
+
+            let path = get_config_path(&template.0);
+            let config = get_config_values(&path, &mut buffer)?;
+
+            println!(
+                "Name: {name}\nPath: {path}\nConfig: {config}\nConfig values: {conf:#?}",
+                path = template.0.display(),
+                config = path.display(),
+                conf = config
+            );
+
+            Ok(())
+        }
         Commands::Init { sub } => match sub {
             InitOpt::Global => {
                 temple_dirs
@@ -224,44 +288,18 @@ If this is your first temple execution you can create a new global config with t
             })
         }
         Commands::New {
-            ref template_name, ..
+            ref template_name,
+            ref project_name,
+            in_place,
+            ..
         } => {
             let templates = temple_dirs
                 .get_available_templates()
                 .map_err(|err| anyhow!("Failed to get templates: {err}"))?;
 
-            let get_config_path = |path: &std::path::Path| {
-                if path.join("config.tpl").exists() {
-                    path.join("config.tpl")
-                } else {
-                    path.join("config.temple")
-                }
-            };
-
-            let global_config = get_config_path(temple_dirs.global_config());
-            let local_config = temple_dirs.local_config().map(get_config_path);
-
-            let global_config_str = std::fs::read_to_string(&global_config)?;
-            let local_config_str = local_config.as_ref().map(std::fs::read_to_string);
-
-            let global_config =
-                Values::from_str(&global_config_str, &global_config).map_err(|err| {
-                    eprintln!("{err:?}");
-                    anyhow!("Failed to parse values from {}", global_config.display())
-                })?;
-
-            let local_config =
-                if let (Some(path), Some(contents)) = (local_config, local_config_str) {
-                    let contents = contents?;
-                    Values::from_str(&contents, &path).map_err(|err| {
-                        eprintln!("{err:?}");
-                        anyhow!("Failed to parse values from {}", path.display())
-                    })?
-                } else {
-                    Values::default()
-                };
-
-            let config = global_config.stash(local_config);
+            let name = template_name.trim_start_matches("local:");
+            name_is_valid(name)?;
+            name_is_valid(project_name)?;
 
             let prefers = if template_name.starts_with("local:") {
                 Prefer::Local
@@ -269,20 +307,74 @@ If this is your first temple execution you can create a new global config with t
                 Prefer::Global
             };
 
-            let name = template_name.trim_start_matches("local:");
-            name_is_valid(name)?;
+            let mut buff = String::new();
 
             let template = templates
                 .get_named(name, &prefers)
                 .ok_or(anyhow!("Template '{name}' does not exist"))?;
 
+            let global_config = get_config_path(temple_dirs.global_config());
+            let local_config = temple_dirs.local_config().map(get_config_path);
+            let template_config = get_config_path(&template.0);
+
+            let global_config = get_config_values(&global_config, &mut buff)?;
+            let local_config = local_config
+                .map(|local| get_config_values(&local, &mut buff))
+                .transpose()?
+                .unwrap_or_default();
+            let template_config = get_config_values(&template_config, &mut buff)?;
+
+            let config = global_config.stash(local_config).stash(template_config);
+
+            info!("Config: {:?}", config.value_map);
+
             trace!("Working with template {:?}", template);
 
+            let current_dir =
+                current_dir().map_err(|err| anyhow!("Failed getting current dir: {err}"))?;
+
+            let current_dir = if in_place {
+                current_dir
+            } else {
+                current_dir.join(project_name)
+            };
+
+            let walker = WalkDir::new(&template.0).into_iter();
+            for entry in walker.filter_entry(|e| {
+                let name = e.file_name().to_str().unwrap_or_default();
+                !(name.ends_with(".temple") || name.ends_with(".tpl"))
+            }) {
+                if let Ok(entry) = entry.map_err(|err| warn!("Error with path: {}", err)) {
+                    let target = entry
+                        .path()
+                        .strip_prefix(&template.0)
+                        .map_err(|err| anyhow!("Failed stripping prefix: {err}"))?;
+
+                    if target == PathBuf::from_str("").expect("Infallible") {
+                        trace!(
+                            "Skipping empty target, presumably the root file. Path {}",
+                            entry.path().display()
+                        );
+                        continue;
+                    }
+
+                    let target = current_dir.join(target);
+
+                    trace!(
+                        "Rendering {} into {}",
+                        entry.path().display(),
+                        target.display()
+                    );
+                };
+            }
+
             // let contents = " Hola ma llamo {{ name }} y {{ if xp == 4 }}soy nuevo{{ else }}soy experimentado{{}} en esto";
-            let contents = " Hola ma llamo {{ if name }} mas texto {{}} {{";
+            let contents =
+                " Hola ma llamo {{ if name }} mas {{ name }} texto {{}} y {{ temple_delimiters.open }} o {{ persona.datos.edad }}";
 
             let path = PathBuf::default();
             let mut contents = ContentsLexer::new(contents, &path, &config)?;
+            let mut con = vec![];
 
             while let Some(token) = contents.next() {
                 if let Err(e) = token {
@@ -290,15 +382,115 @@ If this is your first temple execution you can create a new global config with t
                     break;
                 }
 
-                println!(
+                info!(
                     "{:?}: {}: {}: {token:?}",
                     contents.span(),
                     contents.get_location(contents.span()),
                     contents.slice(),
-                )
+                );
+
+                con.push(token.unwrap());
             }
 
+            let repl = Replaced::from(&con, &config);
+
+            info!("{:?}", repl.map(|v| v.contents.join("")));
+
             Ok(())
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+struct Replaced<'a> {
+    contents: Vec<Cow<'a, str>>,
+}
+
+#[derive(Debug, Clone)]
+enum ErrorReplace<'i> {
+    NoValue(&'i str),
+    NoField(&'i str, &'i str),
+    ExpectedValue(&'i str),
+    UnexpectedObject(&'i str, &'i str),
+    UnexpectedField(&'i str, &'i str),
+}
+
+impl<'a> Replaced<'a> {
+    fn from(
+        mut value: &[temple::replacer::Type<'a>],
+        values: &'a Values,
+    ) -> Result<Self, Vec<ErrorReplace<'a>>> {
+        use temple::replacer::Type;
+
+        let mut contents = Vec::new();
+        let mut errors = Vec::new();
+
+        while !value.is_empty() {
+            match *value {
+                [Type::Raw(blob), ..] => {
+                    contents.push(Cow::Borrowed(blob));
+
+                    value = &value[1..];
+                }
+                [Type::Ident(ident), ..] => {
+                    if let Some(v) = values.value_map.get(ident) {
+                        if let Some(v) = v.as_object().is_none().then_some(v) {
+                            contents.push(Cow::Owned(v.to_string()));
+                        } else {
+                            errors.push(ErrorReplace::ExpectedValue(ident));
+                        }
+                    } else {
+                        errors.push(ErrorReplace::NoValue(ident));
+                    }
+
+                    value = &value[1..];
+                }
+                [Type::IdentWithField(access), ..] => {
+                    let (ident, fields) = access.split_once('.').expect(
+                        "The REGEX does guarantee there is at least a identifier and one field",
+                    );
+
+                    info!("{}: {}", ident, fields);
+
+                    'a: {
+                        if let Some(mut curr) = values.value_map.get(ident) {
+                            for field in fields.split('.') {
+                                curr = if curr.is_object() {
+                                    if let Some(v) = curr.get(field) {
+                                        v
+                                    } else {
+                                        errors.push(ErrorReplace::NoField(access, field));
+                                        break;
+                                    }
+                                } else {
+                                    errors.push(ErrorReplace::UnexpectedField(access, field));
+                                    break;
+                                }
+                            }
+
+                            if curr.is_object() {
+                                errors.push(ErrorReplace::UnexpectedObject(access, ""));
+                                break 'a;
+                            } else {
+                                contents.push(Cow::Owned(curr.to_string()));
+                            }
+                        } else {
+                            errors.push(ErrorReplace::NoValue(ident));
+                        }
+                    }
+
+                    value = &value[1..];
+                }
+                _ => {
+                    value = &value[1..];
+                }
+            }
+        }
+
+        if errors.is_empty() {
+            Ok(Self { contents })
+        } else {
+            Err(errors)
         }
     }
 }
