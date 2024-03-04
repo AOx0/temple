@@ -5,6 +5,7 @@ use std::{
     env::{current_dir, current_exe},
     fs::OpenOptions,
     io::{Read, Write},
+    ops::Not,
     path::PathBuf,
     process::ExitCode,
     str::FromStr,
@@ -418,6 +419,10 @@ If this is your first temple execution you can create a new global config with t
                         target.display()
                     );
 
+                    if entry.file_type().is_dir() {
+                        continue;
+                    }
+
                     let mut origin =
                         OpenOptions::new()
                             .read(true)
@@ -426,15 +431,12 @@ If this is your first temple execution you can create a new global config with t
                                 anyhow!("Error with orign path {}: {err}", entry.path().display())
                             })?;
 
-                    if entry.file_type().is_file() {
-                        if let Some(parent) = target.as_path().parent() {
-                            std::fs::create_dir_all(parent).map_err(|err| {
-                                anyhow!(
-                                    "Error while creating parent dir {}: {err}",
-                                    parent.display()
-                                )
-                            })?;
-                        };
+                    let target = render_path(&target, &config)?;
+
+                    if let Some(par) = target.parent() {
+                        std::fs::create_dir_all(par).map_err(|err| {
+                            anyhow!("Error while creating parent of {}: {err}", target.display())
+                        })?;
                     }
 
                     let mut target = OpenOptions::new()
@@ -480,6 +482,29 @@ If this is your first temple execution you can create a new global config with t
             Ok(())
         }
     }
+}
+
+fn render_path(render: &std::path::Path, config: &Values) -> Result<PathBuf, anyhow::Error> {
+    let contents = render.display().to_string();
+    let path = std::path::Path::new("Path");
+    let repl = Replaced::from(
+        &collect_tokens(ContentsLexer::new(&contents, path, config)?),
+        config,
+    )
+    .map_err(|err| {
+        anyhow!(
+            "Error while replacing values from path name {}: {err:?}",
+            path.display()
+        )
+    })?;
+    let path = repl.contents.join("");
+    let path = PathBuf::from_str(&path).map_err(|err| {
+        anyhow!(
+            "Error computing target path from {}: {err}",
+            render.display()
+        )
+    })?;
+    Ok(path)
 }
 
 fn collect_tokens(mut contents: ContentsLexer<'_>) -> Vec<temple::replacer::Type<'_>> {
@@ -541,8 +566,10 @@ impl<'a> Replaced<'a> {
                         if let Some(v) = v.as_object().is_none().then_some(v) {
                             if let tera::Value::String(v) = v {
                                 contents.push(Cow::Owned(v.to_owned()));
-                            } else {
+                            } else if v.is_null().not() {
                                 contents.push(Cow::Owned(v.to_string()));
+                            } else {
+                                errors.push(ErrorReplace::NoValue(ident))
                             }
                         } else {
                             errors.push(ErrorReplace::ExpectedValue(ident));
@@ -577,10 +604,12 @@ impl<'a> Replaced<'a> {
                             if curr.is_object() {
                                 errors.push(ErrorReplace::UnexpectedObject(access, ""));
                                 break 'a;
-                            } else if let tera::Value::String(v) = curr {
-                                contents.push(Cow::Owned(v.to_owned()));
-                            } else {
+                            } else if let tera::Value::String(curr) = curr {
+                                contents.push(Cow::Owned(curr.to_owned()));
+                            } else if curr.is_null().not() {
                                 contents.push(Cow::Owned(curr.to_string()));
+                            } else {
+                                errors.push(ErrorReplace::NoValue(ident))
                             }
                         } else {
                             errors.push(ErrorReplace::NoValue(ident));

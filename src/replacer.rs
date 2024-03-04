@@ -99,12 +99,12 @@ impl<'i> ContentsLexer<'i> {
             ))?
             .try_into()?;
 
-        DELIMITERS
+        _ = DELIMITERS
             .set((
                 indicators.delimiters().0.to_owned(),
                 indicators.delimiters().1.to_owned(),
             ))
-            .map_err(|e| anyhow!("Failed setting OnceLock: {e:?}"))?;
+            .map_err(|e| crate::info!("Already set: {e:?}"));
 
         Ok(ContentsLexer {
             next: None,
