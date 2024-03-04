@@ -1,6 +1,14 @@
 use anyhow::{anyhow, bail, ensure, Context, Result};
 use clap::Parser;
-use std::{borrow::Cow, env::current_dir, path::PathBuf, process::ExitCode, str::FromStr};
+use std::{
+    borrow::Cow,
+    env::{current_dir, current_exe},
+    fs::OpenOptions,
+    io::{Read, Write},
+    path::PathBuf,
+    process::ExitCode,
+    str::FromStr,
+};
 use temple::{
     args::{Args, Commands, InitOpt},
     config::{Prefer, TempleDirs},
@@ -26,9 +34,7 @@ fn name_is_valid(name: &str) -> Result<()> {
         .ok_or(anyhow!("Invalid name: '{name}'"))
 }
 
-fn parse_values(path: &std::path::Path, buff: &mut String) -> Result<Values> {
-    use std::io::Read;
-
+fn parse_values_from_path(path: &std::path::Path, buff: &mut String) -> Result<Values> {
     buff.clear();
 
     let mut file = std::fs::OpenOptions::new()
@@ -39,10 +45,16 @@ fn parse_values(path: &std::path::Path, buff: &mut String) -> Result<Values> {
     file.read_to_string(buff)
         .map_err(|err| anyhow!("Error reading file {path}: {err}", path = path.display()))?;
 
-    let str = std::fs::read_to_string(path)?;
-    Values::from_str(&str, path).map_err(|err| {
+    Values::from_str(buff, path).map_err(|err| {
         eprintln!("{err:?}");
         anyhow!("Failed to parse values from {}", path.display())
+    })
+}
+
+fn parse_values_from_str(str: &str, desc: &str) -> Result<Values> {
+    Values::from_str(str, current_exe().unwrap().as_path()).map_err(|err| {
+        eprintln!("{err:?}");
+        anyhow!("Failed to parse values from {desc}")
     })
 }
 
@@ -82,7 +94,7 @@ If this is your first temple execution you can create a new global config with t
             let is_global = !template_name.starts_with("local:");
             let name = template_name.trim_start_matches("local:");
 
-            name_is_valid(name)?;
+            name_is_valid(name).map_err(|err| anyhow!("Error with name: {err}"))?;
 
             let prefers = if !is_global {
                 Prefer::Local
@@ -101,7 +113,8 @@ If this is your first temple execution you can create a new global config with t
                 .ok_or(anyhow!("Template '{name}' does not exist"))?;
 
             let path = templ_path(&template.0);
-            let config = parse_values(&path, &mut buffer)?;
+            let config = parse_values_from_path(&path, &mut buffer)
+                .map_err(|err| anyhow!("Error while parsing config: {err}"))?;
 
             println!(
                 "Name: {name}\nPath: {path}\nConfig: {config}\nConfig values: {conf:#?}",
@@ -121,8 +134,6 @@ If this is your first temple execution you can create a new global config with t
                     .create_global_config()
                     .map_err(|e| anyhow!("Failed creating config file: {e}"))?
                     .map(|mut f| {
-                        use std::io::Write;
-
                         info!("Writing default configuration to global configuration file");
 
                         writeln!(
@@ -290,7 +301,8 @@ If this is your first temple execution you can create a new global config with t
         Commands::New {
             ref template_name,
             ref project_name,
-            in_place,
+            mut in_place,
+            ref cli_keys,
             ..
         } => {
             let templates = temple_dirs
@@ -313,16 +325,34 @@ If this is your first temple execution you can create a new global config with t
                 .get_named(name, &prefers)
                 .ok_or(anyhow!("Template '{name}' does not exist"))?;
 
-            let global_config = parse_values(&templ_path(temple_dirs.global_config()), &mut buff)?;
+            let global_config =
+                parse_values_from_path(&templ_path(temple_dirs.global_config()), &mut buff)
+                    .map_err(|err| {
+                        anyhow!(
+                            "Error while parsing global config at {}: {err}",
+                            templ_path(temple_dirs.global_config()).display()
+                        )
+                    })?;
             let local_config = temple_dirs
                 .local_config()
                 .map(templ_path)
-                .map(|local| parse_values(&local, &mut buff))
+                .map(|local| parse_values_from_path(&local, &mut buff))
                 .transpose()?
                 .unwrap_or_default();
-            let template_config = parse_values(&templ_path(&template.0), &mut buff)?;
+            let template_config = parse_values_from_path(&templ_path(&template.0), &mut buff)
+                .map_err(|err| {
+                    anyhow!(
+                        "Error while parsing config at {}: {err}",
+                        templ_path(&template.0).display()
+                    )
+                })?;
+            let cli_config = parse_values_from_str(&cli_keys.join(" "), "Args")
+                .map_err(|err| anyhow!("Error while parsing config from str: {err}"))?;
 
-            let mut config = global_config.stash(local_config).stash(template_config);
+            let mut config = global_config
+                .stash(local_config)
+                .stash(template_config)
+                .stash(cli_config);
 
             // Insert template and project name
             {
@@ -343,6 +373,17 @@ If this is your first temple execution you can create a new global config with t
 
             let current_dir =
                 current_dir().map_err(|err| anyhow!("Failed getting current dir: {err}"))?;
+
+            if matches!(config.value_map.get("temple_in_place"), Some(v) if v.is_boolean()) {
+                let conf_in_place = config
+                    .value_map
+                    .get("temple_in_place")
+                    .unwrap()
+                    .as_bool()
+                    .unwrap();
+
+                in_place = conf_in_place || in_place;
+            }
 
             let current_dir = if in_place {
                 current_dir
@@ -376,22 +417,65 @@ If this is your first temple execution you can create a new global config with t
                         entry.path().display(),
                         target.display()
                     );
+
+                    let mut origin =
+                        OpenOptions::new()
+                            .read(true)
+                            .open(entry.path())
+                            .map_err(|err| {
+                                anyhow!("Error with orign path {}: {err}", entry.path().display())
+                            })?;
+
+                    if entry.file_type().is_file() {
+                        if let Some(parent) = target.as_path().parent() {
+                            std::fs::create_dir_all(parent).map_err(|err| {
+                                anyhow!(
+                                    "Error while creating parent dir {}: {err}",
+                                    parent.display()
+                                )
+                            })?;
+                        };
+                    }
+
+                    let mut target = OpenOptions::new()
+                        .create(true)
+                        .truncate(true)
+                        .write(true)
+                        .open(&target)
+                        .map_err(|err| {
+                            anyhow!("Error with target path {}: {err}", target.display())
+                        })?;
+
+                    buff.clear();
+                    origin.read_to_string(&mut buff).map_err(|err| {
+                        anyhow!(
+                            "Error while reading orign path {}: {err}",
+                            entry.path().display()
+                        )
+                    })?;
+
+                    let contents = buff.as_str();
+                    let path = entry.path();
+                    let repl = Replaced::from(
+                        &collect_tokens(ContentsLexer::new(contents, path, &config)?),
+                        &config,
+                    )
+                    .map_err(|err| {
+                        anyhow!(
+                            "Error while replacing values from {}: {err:?}",
+                            path.display()
+                        )
+                    })?;
+
+                    for res in repl.contents {
+                        target
+                            .write_all(res.as_bytes())
+                            .map_err(|err| anyhow!("Error writing: {err}"))?;
+                    }
+
+                    // info!("{:?}", repl.map(|v| v.contents.join("")));
                 };
             }
-
-            // let contents = " Hola ma llamo {{ name }} y {{ if xp == 4 }}soy nuevo{{ else }}soy experimentado{{}} en esto";
-            // let contents =
-            //     " Hola ma llamo {{ if name }} mas {{ name }} texto {{}} y {{ temple_delimiters.open }} o {{ persona.datos.edad }}";
-            let contents =
-                " Hola ma llamo [[ if name ]] mas [[ name ]] texto [[]] y [[ temple_delimiters.open ]] o [[ persona.datos.edad ]]";
-
-            let path = PathBuf::default();
-            let repl = Replaced::from(
-                &collect_tokens(ContentsLexer::new(contents, &path, &config)?),
-                &config,
-            );
-
-            info!("{:?}", repl.map(|v| v.contents.join("")));
 
             Ok(())
         }
@@ -421,6 +505,7 @@ fn collect_tokens(mut contents: ContentsLexer<'_>) -> Vec<temple::replacer::Type
 }
 
 #[derive(Debug, Clone)]
+#[repr(transparent)]
 struct Replaced<'a> {
     contents: Vec<Cow<'a, str>>,
 }
@@ -454,7 +539,11 @@ impl<'a> Replaced<'a> {
                 [Type::Ident(ident), ..] => {
                     if let Some(v) = values.value_map.get(ident) {
                         if let Some(v) = v.as_object().is_none().then_some(v) {
-                            contents.push(Cow::Owned(v.to_string()));
+                            if let tera::Value::String(v) = v {
+                                contents.push(Cow::Owned(v.to_owned()));
+                            } else {
+                                contents.push(Cow::Owned(v.to_string()));
+                            }
                         } else {
                             errors.push(ErrorReplace::ExpectedValue(ident));
                         }
@@ -488,6 +577,8 @@ impl<'a> Replaced<'a> {
                             if curr.is_object() {
                                 errors.push(ErrorReplace::UnexpectedObject(access, ""));
                                 break 'a;
+                            } else if let tera::Value::String(v) = curr {
+                                contents.push(Cow::Owned(v.to_owned()));
                             } else {
                                 contents.push(Cow::Owned(curr.to_string()));
                             }

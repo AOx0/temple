@@ -32,6 +32,10 @@ pub fn try_value_from(tokens: &mut Tokens<'_>) -> Result<Value, anyhow::Error> {
                 Number::from_f64(v).context("Invalid float value")?,
             ))
         }
+        &[Variant::Bool(v), ..] => {
+            tokens.step();
+            Ok(Value::Bool(v))
+        }
         [Variant::SqOpen, ..] => parse_list(tokens),
         [Variant::CyOpen, ..] => parse_object(tokens),
         _ => bail!(ferror!(
