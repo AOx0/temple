@@ -93,4 +93,7 @@ complete -c temple -n "__fish_seen_subcommand_from list" -s p -l path -d 'Show t
 
 # new
 complete -c temple -n "__fish_seen_subcommand_from new info; and not __fish_seen_subcommand_from help" -ka '(__fish_temple_complete_templates)'
+complete -c temple -n "__fish_seen_subcommand_from new" -s l -l local -d 'Prefer local (./.temple/template_name) if available [default: prefer ~/.temple/template_name]'
+complete -c temple -n "__fish_seen_subcommand_from new" -s i -l in-place -d 'Place contents in_place (./.) instead of creating a folder'
+complete -c temple -n "__fish_seen_subcommand_from new" -s o -l overwrite -d 'Overwrite any already existing files'
 # complete -c temple -n "__fish_seen_subcommand_from new info; and __fish_seen_subcommand_from $templates" -n "not contains -- -- (commandline -opc)" -a '(__fish_temple_c_complete)' 
