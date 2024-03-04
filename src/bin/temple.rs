@@ -12,7 +12,7 @@ use temple::{
 };
 use walkdir::WalkDir;
 
-fn get_config_path(path: &std::path::Path) -> PathBuf {
+fn templ_path(path: &std::path::Path) -> PathBuf {
     if path.join("config.tpl").exists() {
         path.join("config.tpl")
     } else {
@@ -26,7 +26,7 @@ fn name_is_valid(name: &str) -> Result<()> {
         .ok_or(anyhow!("Invalid name: '{name}'"))
 }
 
-fn get_config_values(path: &std::path::Path, buff: &mut String) -> Result<Values> {
+fn parse_values(path: &std::path::Path, buff: &mut String) -> Result<Values> {
     use std::io::Read;
 
     buff.clear();
@@ -100,8 +100,8 @@ If this is your first temple execution you can create a new global config with t
                 .get_named(name, &prefers)
                 .ok_or(anyhow!("Template '{name}' does not exist"))?;
 
-            let path = get_config_path(&template.0);
-            let config = get_config_values(&path, &mut buffer)?;
+            let path = templ_path(&template.0);
+            let config = parse_values(&path, &mut buffer)?;
 
             println!(
                 "Name: {name}\nPath: {path}\nConfig: {config}\nConfig values: {conf:#?}",
@@ -313,21 +313,32 @@ If this is your first temple execution you can create a new global config with t
                 .get_named(name, &prefers)
                 .ok_or(anyhow!("Template '{name}' does not exist"))?;
 
-            let global_config = get_config_path(temple_dirs.global_config());
-            let local_config = temple_dirs.local_config().map(get_config_path);
-            let template_config = get_config_path(&template.0);
-
-            let global_config = get_config_values(&global_config, &mut buff)?;
-            let local_config = local_config
-                .map(|local| get_config_values(&local, &mut buff))
+            let global_config = parse_values(&templ_path(temple_dirs.global_config()), &mut buff)?;
+            let local_config = temple_dirs
+                .local_config()
+                .map(templ_path)
+                .map(|local| parse_values(&local, &mut buff))
                 .transpose()?
                 .unwrap_or_default();
-            let template_config = get_config_values(&template_config, &mut buff)?;
+            let template_config = parse_values(&templ_path(&template.0), &mut buff)?;
 
-            let config = global_config.stash(local_config).stash(template_config);
+            let mut config = global_config.stash(local_config).stash(template_config);
 
-            info!("Config: {:?}", config.value_map);
+            // Insert template and project name
+            {
+                config.value_map.insert(
+                    "tname".to_string(),
+                    tera::Value::String(template_name.to_string()),
+                );
 
+                config.value_map.insert(
+                    "tproject".to_string(),
+                    tera::Value::String(project_name.to_string()),
+                );
+            }
+
+            // TODO: Implement null value checking within objects and primitives
+            trace!("Final config: {:?}", config.value_map);
             trace!("Working with template {:?}", template);
 
             let current_dir =
@@ -352,7 +363,7 @@ If this is your first temple execution you can create a new global config with t
 
                     if target == PathBuf::from_str("").expect("Infallible") {
                         trace!(
-                            "Skipping empty target, presumably the root file. Path {}",
+                            "Rendering: Skipping empty target, presumably the root file. Path {}",
                             entry.path().display()
                         );
                         continue;
@@ -361,7 +372,7 @@ If this is your first temple execution you can create a new global config with t
                     let target = current_dir.join(target);
 
                     trace!(
-                        "Rendering {} into {}",
+                        "Rendering: Render of {} into {}",
                         entry.path().display(),
                         target.display()
                     );
@@ -369,36 +380,44 @@ If this is your first temple execution you can create a new global config with t
             }
 
             // let contents = " Hola ma llamo {{ name }} y {{ if xp == 4 }}soy nuevo{{ else }}soy experimentado{{}} en esto";
+            // let contents =
+            //     " Hola ma llamo {{ if name }} mas {{ name }} texto {{}} y {{ temple_delimiters.open }} o {{ persona.datos.edad }}";
             let contents =
-                " Hola ma llamo {{ if name }} mas {{ name }} texto {{}} y {{ temple_delimiters.open }} o {{ persona.datos.edad }}";
+                " Hola ma llamo [[ if name ]] mas [[ name ]] texto [[]] y [[ temple_delimiters.open ]] o [[ persona.datos.edad ]]";
 
             let path = PathBuf::default();
-            let mut contents = ContentsLexer::new(contents, &path, &config)?;
-            let mut con = vec![];
-
-            while let Some(token) = contents.next() {
-                if let Err(e) = token {
-                    error!(e);
-                    break;
-                }
-
-                info!(
-                    "{:?}: {}: {}: {token:?}",
-                    contents.span(),
-                    contents.get_location(contents.span()),
-                    contents.slice(),
-                );
-
-                con.push(token.unwrap());
-            }
-
-            let repl = Replaced::from(&con, &config);
+            let repl = Replaced::from(
+                &collect_tokens(ContentsLexer::new(contents, &path, &config)?),
+                &config,
+            );
 
             info!("{:?}", repl.map(|v| v.contents.join("")));
 
             Ok(())
         }
     }
+}
+
+fn collect_tokens(mut contents: ContentsLexer<'_>) -> Vec<temple::replacer::Type<'_>> {
+    let mut con = vec![];
+
+    while let Some(token) = contents.next() {
+        if let Err(e) = token {
+            error!(e);
+            break;
+        }
+
+        trace!(
+            "Lexer: {:?}: {}: {}: {token:?}",
+            contents.span(),
+            contents.get_location(contents.span()),
+            contents.slice(),
+        );
+
+        con.push(token.unwrap());
+    }
+
+    con
 }
 
 #[derive(Debug, Clone)]
@@ -449,8 +468,6 @@ impl<'a> Replaced<'a> {
                     let (ident, fields) = access.split_once('.').expect(
                         "The REGEX does guarantee there is at least a identifier and one field",
                     );
-
-                    info!("{}: {}", ident, fields);
 
                     'a: {
                         if let Some(mut curr) = values.value_map.get(ident) {
