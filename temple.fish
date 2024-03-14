@@ -1,4 +1,4 @@
-set -l commands list new init deinit help create remove info debug-config
+set -l commands list new init deinit help create remove rm info debug-config
 set -l templates (temple list -se 2> /dev/null | tr " " "\n" || echo "")
 
 function __fish_temple_contains_temple_new
@@ -24,7 +24,7 @@ function __fish_temple_complete_templates
 end
 
 function __fish_temple_help_subcommand_completion
-    set -l commands list new init deinit help create remove info debug-config
+    set -l commands list new init deinit help create remove rm info debug-config
     set -l cmd_args (commandline -opc)
 
     if test (count $cmd_args) -eq 2
@@ -61,6 +61,7 @@ complete -c temple -n "not __fish_seen_subcommand_from $commands" -a init -d 'In
 complete -c temple -n "not __fish_seen_subcommand_from $commands" -a deinit -d 'Remove a temple config directory'
 complete -c temple -n "not __fish_seen_subcommand_from $commands" -a create -d 'Create a new empty template. You can then place files in it'
 complete -c temple -n "not __fish_seen_subcommand_from $commands" -a remove -d 'Remove an existing template'
+complete -c temple -n "not __fish_seen_subcommand_from $commands" -a rm -d 'Remove an existing template'
 complete -c temple -n "not __fish_seen_subcommand_from $commands" -a debug-config -d 'Parse and dump objects to stdout'
 complete -c temple -n "not __fish_seen_subcommand_from $commands" -a help -d 'Print this message or the help of the given subcommand(s)'
 
@@ -75,9 +76,11 @@ complete -c temple -n "__fish_seen_subcommand_from deinit; and not __fish_seen_s
 
 # create
 complete -c temple -n "__fish_seen_subcommand_from create; and __fish_seen_subcommand_from global local" -F
+complete -c temple -n "__fish_seen_subcommand_from create; and __fish_seen_subcommand_from global local" -F
 
 # remove
-complete -c temple -n "__fish_seen_subcommand_from remove; and not __fish_seen_subcommand_from help" -ka '(__fish_temple_complete_templates)'
+# remove
+complete -c temple -n "__fish_seen_subcommand_from remove rm; and not __fish_seen_subcommand_from help" -ka '(__fish_temple_complete_templates)'
 
 # debug
 complete -c temple -n "__fish_seen_subcommand_from debug-config" -F

@@ -51,6 +51,7 @@ pub enum Commands {
         template_name: String,
     },
     /// Remove an existing template
+    #[clap(alias = "rm")]
     Remove {
         /// Name of the template
         template_name: String,
