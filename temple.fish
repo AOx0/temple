@@ -74,8 +74,6 @@ complete -c temple -n "__fish_seen_subcommand_from deinit; and not __fish_seen_s
 complete -c temple -n "__fish_seen_subcommand_from deinit; and not __fish_seen_subcommand_from global local" -a local -d 'Create a new temple local configuration dir in the current dir'
 
 # create
-complete -c temple -n "__fish_seen_subcommand_from create; and not __fish_seen_subcommand_from global local" -a global -d 'Create a new empty global template'
-complete -c temple -n "__fish_seen_subcommand_from create; and not __fish_seen_subcommand_from global local" -a local -d 'Create a new empty local template'
 complete -c temple -n "__fish_seen_subcommand_from create; and __fish_seen_subcommand_from global local" -F
 
 # remove

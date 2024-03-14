@@ -355,19 +355,6 @@ If this is your first temple execution you can create a new global config with t
                 .stash(template_config)
                 .stash(cli_config);
 
-            // Insert template and project name
-            {
-                config.value_map.insert(
-                    "tname".to_string(),
-                    tera::Value::String(template_name.to_string()),
-                );
-
-                config.value_map.insert(
-                    "tproject".to_string(),
-                    tera::Value::String(project_name.to_string()),
-                );
-            }
-
             // TODO: Implement null value checking within objects and primitives
             trace!("Final config: {:?}", config.value_map);
             trace!("Working with template {:?}", template);
@@ -391,6 +378,24 @@ If this is your first temple execution you can create a new global config with t
             } else {
                 current_dir.join(project_name)
             };
+
+            // Insert template and project name
+            {
+                config.value_map.insert(
+                    "temple_template_name".to_string(),
+                    tera::Value::String(template_name.to_string()),
+                );
+
+                config.value_map.insert(
+                    "temple_project_name".to_string(),
+                    tera::Value::String(project_name.to_string()),
+                );
+
+                config.value_map.insert(
+                    "temple_render_path".to_string(),
+                    tera::Value::String(current_dir.as_os_str().to_string_lossy().to_string()),
+                );
+            }
 
             let walker = WalkDir::new(&template.0).into_iter();
             for entry in walker.filter_entry(|e| {
