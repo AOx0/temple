@@ -1,14 +1,14 @@
-set -l commands list new init deinit help create remove info 'debug-config'
+set -l commands list new init deinit help create remove info debug-config
 set -l templates (temple list -se 2> /dev/null | tr " " "\n" || echo "")
 
 function __fish_temple_contains_temple_new
     set -l cmd_args (commandline -opc)
     set -l list_arr (temple list -se 2> /dev/null | tr " " "\n" || echo "")
-    set -l contains "n"
+    set -l contains n
 
     for arg in $cmd_args
         if contains -- $arg $list_arr
-            set contains "s"
+            set contains s
         end
     end
 
@@ -18,17 +18,17 @@ end
 function __fish_temple_complete_templates
     set -l contains (__fish_temple_contains_temple_new)
 
-    if [ "$contains" = "n" ]
-        temple list -spe 2> /dev/null | tr " " "\n" || echo ""
+    if [ "$contains" = n ]
+        temple list -spe 2>/dev/null | tr " " "\n" || echo ""
     end
 end
 
 function __fish_temple_help_subcommand_completion
-    set -l commands list new init deinit help create remove info 'debug-config'
+    set -l commands list new init deinit help create remove info debug-config
     set -l cmd_args (commandline -opc)
 
     if test (count $cmd_args) -eq 2
-        echo $commands 2> /dev/null | tr " " "\n" || echo ""
+        echo $commands 2>/dev/null | tr " " "\n" || echo ""
     end
 end
 
