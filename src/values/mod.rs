@@ -77,6 +77,7 @@ impl std::fmt::Display for Type {
 }
 
 impl Type {
+    #[must_use]
     pub fn from_value(value: &Value, decl_type: &Type) -> Self {
         let res = match value {
             Value::Null => decl_type.clone(),
@@ -157,7 +158,7 @@ impl Values {
             self.value_map
                 .insert(k, v)
                 .iter()
-                .for_each(|v| warn!("Overriding value with {:?}", v));
+                .for_each(|v| warn!("Overriding previous value {:?}", v));
         }
 
         for (k, v) in other.type_map.0 {
@@ -278,18 +279,4 @@ fn get_tokens<'a>(input: &'a str, source: &str, print: bool) -> Result<Tokens<'a
     }
 
     Ok(tokens)
-}
-
-#[cfg(test)]
-mod test {
-    use super::Values;
-
-    #[test]
-    fn parse_list() {
-        let source = "str slice";
-        let value = "[9, 4, 5, 6]";
-
-        let a = Values::parse_value(value, source);
-        println!("{a:?}")
-    }
 }

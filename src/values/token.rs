@@ -16,6 +16,12 @@ pub struct Token<'i> {
     pub span: Span,
 }
 
+impl std::fmt::Debug for Token<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.token)
+    }
+}
+
 pub struct Peek<'re, 'i> {
     pub token: &'re Variant<'i>,
     pub span: &'re Span,

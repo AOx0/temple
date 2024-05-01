@@ -36,13 +36,26 @@ pub fn try_value_from(tokens: &mut Tokens<'_>) -> Result<Value, anyhow::Error> {
             tokens.step();
             Ok(Value::Bool(v))
         }
+        [Variant::SqOpen | Variant::CyOpen] => bail!(ferror!(
+            "{}",
+            tokens.error_current_span(format!(
+                "Non closing {}",
+                tokens
+                    .peek()
+                    .expect("We know there is at least one value")
+                    .token
+            ))
+        )),
         [Variant::SqOpen, ..] => parse_list(tokens),
         [Variant::CyOpen, ..] => parse_object(tokens),
         _ => bail!(ferror!(
             "{}",
             tokens.error_current_span(format!(
-                "Found unexpected token {:?} while trying to parse value",
-                tokens.try_first().map(|t| t.token)
+                "Found unexpected token {} while trying to parse value",
+                tokens.try_first().map_or_else(
+                    || "'Error getting token. No tokens'".to_string(),
+                    |t| t.token.to_string()
+                )
             ))
         )),
     }

@@ -356,7 +356,6 @@ If this is your first temple execution you can create a new global config with t
                 .stash(template_config)
                 .stash(cli_config);
 
-            // TODO: Implement null value checking within objects and primitives
             for (name, value) in config.value_map.iter_mut() {
                 if value.is_null() {
                     let dtype = config.type_map.get_mut(name).expect("We know it exists");
@@ -365,7 +364,7 @@ If this is your first temple execution you can create a new global config with t
                         | Type::Object(_) 
                         | Type::Any 
                         | Type::Number => {
-                            let input = ask_any(name, &format!("{dtype}"), dtype.clone());
+                            let input = ask_any(name, &format!("{dtype}"), dtype.clone())?;
                             let input_value = Values::parse_value(&input, "")
                                 .expect("Infallible, checked inside the function");
 
@@ -691,7 +690,7 @@ fn ask_string(key: &str) -> String {
     inquire::prompt_text(format!("Enter a String value for field {key:?}:")).unwrap()
 }
 
-fn ask_any(key: &str, kind: &str, expected_type: Type) -> String {
+fn ask_any(key: &str, kind: &str, expected_type: Type) -> Result<String> {
     inquire::Text::new(&format!("Enter {kind} value for field {key:?}:"))
         .with_validator(move |a: &str| {
             Ok(if a.is_empty().not() {
@@ -713,7 +712,7 @@ fn ask_any(key: &str, kind: &str, expected_type: Type) -> String {
             })
         })
         .prompt()
-        .unwrap()
+        .map_err(|err| anyhow!(err))
 }
 
 fn ask_bool(key: &str) -> bool {
