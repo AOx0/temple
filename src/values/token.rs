@@ -13,7 +13,6 @@ pub struct Tokens<'i> {
 
 pub struct Token<'i> {
     pub token: Variant<'i>,
-    pub span: Span,
 }
 
 impl std::fmt::Debug for Token<'_> {
@@ -24,7 +23,6 @@ impl std::fmt::Debug for Token<'_> {
 
 pub struct Peek<'re, 'i> {
     pub token: &'re Variant<'i>,
-    pub span: &'re Span,
 }
 
 struct Underlined(Span);
@@ -174,7 +172,6 @@ impl Tokens<'_> {
     pub fn try_first(&self) -> Option<Token<'_>> {
         (!self.is_empty()).then(|| Token {
             token: self.token[self.cursor],
-            span: self.span[self.cursor].clone(),
         })
     }
 
@@ -184,7 +181,6 @@ impl Tokens<'_> {
         } else {
             Some(Peek {
                 token: &self.token[self.cursor],
-                span: &self.span[self.cursor],
             })
         }
     }

@@ -361,9 +361,9 @@ If this is your first temple execution you can create a new global config with t
                 if value.is_null() {
                     let dtype = config.type_map.get_mut(name).expect("We know it exists");
                     match dtype {
-                        Type::Array(_) 
-                        | Type::Object(_) 
-                        | Type::Any 
+                        Type::Array(_)
+                        | Type::Object(_)
+                        | Type::Any
                         | Type::Number => {
                             let input = ask_any(name, &format!("{dtype}"), dtype.clone())?;
                             let input_value = Values::parse_value(&input, "")
@@ -484,7 +484,10 @@ If this is your first temple execution you can create a new global config with t
 
                     // If overwrite is false skip the render
                     if target.exists() && !overwrite_targets.is_some_and(|v| v) {
-                        warn!("Skipping dir {} because it already exists", target.display());
+                        warn!(
+                            "Skipping dir {} because it already exists",
+                            target.display()
+                        );
                         continue;
                     }
 
@@ -593,6 +596,7 @@ struct Replaced<'a> {
 }
 
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 enum ErrorReplace<'i> {
     NoValue(&'i str),
     NoField(&'i str, &'i str),
@@ -736,8 +740,7 @@ fn ask_any(key: &str, kind: &str, expected_type: Type) -> Result<String> {
 }
 
 fn ask_bool(key: &str) -> Result<bool> {
-    inquire::prompt_confirmation(key)
-        .map_err(|err| anyhow!(err))
+    inquire::prompt_confirmation(key).map_err(|err| anyhow!(err))
 }
 
 fn main() -> ExitCode {
