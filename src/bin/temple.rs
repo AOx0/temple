@@ -305,6 +305,7 @@ If this is your first temple execution you can create a new global config with t
             ref project_name,
             mut in_place,
             ref cli_keys,
+            ref overwrite,
             ..
         } => {
             let templates = temple_dirs
@@ -379,7 +380,7 @@ If this is your first temple execution you can create a new global config with t
                         Type::String => {
                             *value = tera::Value::String(ask_string(name)?)
                         },
-                        Type::Bool => *value = tera::Value::Bool(ask_bool(name)?),
+                        Type::Bool => *value = tera::Value::Bool(ask_bool(&format!("Set bool value of {name:?} to `true`?"))?),
                         Type::Unknown => bail!(
                             "Keys with unknown data type and no value assigned are not supported: {name:?}\n"
                         ),
@@ -427,6 +428,8 @@ If this is your first temple execution you can create a new global config with t
                 );
             }
 
+            let mut overwrite_targets = None;
+
             let walker = WalkDir::new(&template.0).into_iter();
             for entry in walker.filter_entry(|e| {
                 let name = e.file_name().to_str().unwrap_or_default();
@@ -468,6 +471,24 @@ If this is your first temple execution you can create a new global config with t
 
                     let target = render_path(&target, &config)?;
 
+                    // Set the overwrite value once
+                    overwrite_targets = if target.exists() && overwrite_targets.is_none() {
+                        if !overwrite {
+                            Some(ask_bool(&format!("The target dir {} already exists. Do you want to overwrite the target files?", target.display()))?)
+                        } else {
+                            Some(*overwrite)
+                        }
+                    } else {
+                        overwrite_targets
+                    };
+
+                    // If overwrite is false skip the render
+                    if target.exists() && !overwrite_targets.is_some_and(|v| v) {
+                        warn!("Skipping dir {} because it already exists", target.display());
+                        continue;
+                    }
+
+                    // Create parent dirs as needed
                     if let Some(par) = target.parent() {
                         std::fs::create_dir_all(par).map_err(|err| {
                             anyhow!("Error while creating parent of {}: {err}", target.display())
@@ -476,7 +497,7 @@ If this is your first temple execution you can create a new global config with t
 
                     let mut target = OpenOptions::new()
                         .create(true)
-                        .truncate(true)
+                        .truncate(overwrite_targets.unwrap_or_default())
                         .write(true)
                         .open(&target)
                         .map_err(|err| {
@@ -715,7 +736,7 @@ fn ask_any(key: &str, kind: &str, expected_type: Type) -> Result<String> {
 }
 
 fn ask_bool(key: &str) -> Result<bool> {
-    inquire::prompt_confirmation(format!("Set bool value of {key:?} to `true`?"))
+    inquire::prompt_confirmation(key)
         .map_err(|err| anyhow!(err))
 }
 

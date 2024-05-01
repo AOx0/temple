@@ -5,7 +5,7 @@ version = "0.5.0"
 edition = "2021"
 license = "MIT"
 
-description = "Jet another project template renderer"
+description = "Yet another project template renderer"
 repository = "https://github.com/AOx0/temple"
 categories = ["cli", "development-tools"]
 keywords = ["template"]
