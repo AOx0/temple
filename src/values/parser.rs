@@ -78,8 +78,8 @@ pub fn try_type_from(tokens: &mut Tokens<'_>) -> Result<Type, anyhow::Error> {
             tokens.step();
             Ok(Type::Bool)
         }
-        [Variant::KwArray, ..] => parse_array_type(tokens.skiping(1)),
-        [Variant::KwObject, ..] => parse_object_type(tokens.skiping(1)),
+        [Variant::KwArray, ..] => parse_array_type(tokens.skipping(1)),
+        [Variant::KwObject, ..] => parse_object_type(tokens.skipping(1)),
         [Variant::SqOpen, ..] => parse_array_type(tokens),
         [Variant::CyOpen, ..] => parse_object_type(tokens),
         _ => berr!(tokens.error_current_span(format!(
@@ -102,7 +102,7 @@ pub fn parse_object_type(tokens: &mut Tokens<'_>) -> Result<Type, anyhow::Error>
             while matches!(tokens.tokens(), [Variant::Ident(_), Variant::EqD, ..]) {
                 let loc = tokens.current_location();
                 let ident = tokens.get_ident().expect("Just matched");
-                let value = try_type_from(tokens.skiping(2))?;
+                let value = try_type_from(tokens.skipping(2))?;
 
                 res.insert(ident.to_string(), value).is_some().then(|| {
                     warn!(tokens.error_at(
@@ -169,7 +169,7 @@ pub fn parse_config(tokens: &mut Tokens<'_>) -> Result<(ValueMap, TypeMap), anyh
                 // Parse optional data type
                 let typ = if matches!(tokens.tokens(), [Variant::EqD, token, ..] if token.is_type_decl())
                 {
-                    let typ = try_type_from(tokens.skiping(1))?;
+                    let typ = try_type_from(tokens.skipping(1))?;
                     types.insert(ident.to_string(), typ);
 
                     Some(types.get(ident.as_str()).expect("just pushed the value"))
@@ -183,7 +183,7 @@ pub fn parse_config(tokens: &mut Tokens<'_>) -> Result<(ValueMap, TypeMap), anyh
                 };
 
                 if let [Variant::Eq, ..] = tokens.tokens() {
-                    let value = try_value_from(tokens.skiping(1))?;
+                    let value = try_value_from(tokens.skipping(1))?;
 
                     values.insert(ident.to_string(), value).is_some().then(|| {
                         warn!(tokens.error_at(
@@ -248,7 +248,7 @@ pub fn parse_object(tokens: &mut Tokens<'_>) -> Result<Value, anyhow::Error> {
             while let &[Variant::Ident(_), Variant::Eq | Variant::EqD, ..] = tokens.tokens() {
                 let loc = tokens.current_location();
                 let ident = tokens.get_ident().expect("Just matched");
-                let value = try_value_from(tokens.skiping(2))?;
+                let value = try_value_from(tokens.skipping(2))?;
 
                 res.insert(ident.to_string(), value).is_some().then(|| {
                     warn!(tokens.error_at(

@@ -4,7 +4,7 @@ mod token;
 use anyhow::{anyhow, ensure};
 use std::{
     collections::{hash_map::Entry, HashMap},
-    ops::{Deref, DerefMut},
+    ops::{Deref, DerefMut, Not as _},
     path::Path,
 };
 use tera::Value;
@@ -77,7 +77,7 @@ impl std::fmt::Display for Type {
 }
 
 impl Type {
-    fn from(value: &Value, decl_type: &Type) -> Self {
+    pub fn from_value(value: &Value, decl_type: &Type) -> Self {
         let res = match value {
             Value::Null => decl_type.clone(),
             Value::Bool(_) => Type::Bool,
@@ -91,7 +91,7 @@ impl Type {
                         Type::Unknown
                     }
                 }
-                [first] => Type::from(
+                [first] => Type::from_value(
                     first,
                     if let Type::Array(decl) = decl_type {
                         decl
@@ -106,13 +106,14 @@ impl Type {
                         &Type::Unknown
                     };
                     for e in a {
-                        if !Type::from(e, inner_decl).is_equivalent(&Type::from(first, inner_decl))
+                        if !Type::from_value(e, inner_decl)
+                            .is_equivalent(&Type::from_value(first, inner_decl))
                         {
                             warn!("Not all values in array have the same value. Treating as an Array [ Any ] for {}", value);
                             return Type::Array(Box::new(Type::Any));
                         }
                     }
-                    Type::from(first, inner_decl)
+                    Type::from_value(first, inner_decl)
                 }
             })),
             Value::Object(o) => {
@@ -126,7 +127,7 @@ impl Type {
                 for (k, v) in o {
                     fields.insert(
                         k.to_owned(),
-                        Type::from(
+                        Type::from_value(
                             v,
                             inner_decl.and_then(|m| m.get(k)).unwrap_or(&Type::Unknown),
                         ),
@@ -175,7 +176,7 @@ impl Values {
 
         for (k, v) in self.value_map.iter() {
             let decl_type = self.type_map.get(k).expect("Missing value");
-            let val_type = Type::from(v, decl_type);
+            let val_type = Type::from_value(v, decl_type);
 
             crate::trace!("Decl type of '{k}' is {decl_type}");
             crate::trace!("Real type of '{k}' is {val_type}");
@@ -223,26 +224,20 @@ impl Deref for TypeMap {
 }
 
 impl Values {
+    pub fn parse_value(s: &str, source: &str) -> std::result::Result<Value, anyhow::Error> {
+        let mut tokens = get_tokens(s, source, false)?;
+        let value = parser::try_value_from(&mut tokens)?;
+
+        ensure! {
+            tokens.is_empty(),
+            anyhow!(tokens.error_current_span(format!("Invalid syntax on config, expected to finish parsing everything but remains: {:?}", tokens.tokens())))
+        };
+
+        Ok(value)
+    }
+
     pub fn from_str(s: &str, path: &Path) -> std::result::Result<Self, anyhow::Error> {
-        let mut tokens: Tokens<'_> = Tokens::new(s, format!("{}", path.display()));
-        let mut lexer = Variant::lexer(s);
-
-        while let Some(token) = lexer.next() {
-            let token = if let Err(()) = token {
-                crate::error!(tokens.error_current_span("Error reading token"));
-                continue;
-            } else {
-                token.expect("Already matched error")
-            };
-
-            if let Variant::Comment(text) = token {
-                crate::trace!("Skipping comment '{text}'",);
-                continue;
-            }
-            tokens.span.push(lexer.span());
-            tokens.token.push(token);
-        }
-
+        let mut tokens = get_tokens(s, &format!("{}", path.display()), true)?;
         let (value_map, type_map) = parser::parse_config(&mut tokens)?;
 
         ensure! {
@@ -254,5 +249,47 @@ impl Values {
             value_map,
             type_map,
         })
+    }
+}
+
+fn get_tokens<'a>(input: &'a str, source: &str, print: bool) -> Result<Tokens<'a>, anyhow::Error> {
+    let mut tokens: Tokens<'_> = Tokens::new(input, format!("{source}"));
+    let mut lexer = Variant::lexer(input);
+    while let Some(token) = lexer.next() {
+        let token = if let Err(()) = token {
+            if !print {
+                return Err(anyhow!("Error reading token"));
+            } else if print && tokens.span.is_empty().not() {
+                crate::error!(tokens.error_current_span("Error reading token"));
+                continue;
+            }
+
+            return Err(anyhow!("Error reading token"));
+        } else {
+            token.expect("Already matched error")
+        };
+
+        if let Variant::Comment(text) = token {
+            crate::trace!("Skipping comment '{text}'",);
+            continue;
+        }
+        tokens.span.push(lexer.span());
+        tokens.token.push(token);
+    }
+
+    Ok(tokens)
+}
+
+#[cfg(test)]
+mod test {
+    use super::Values;
+
+    #[test]
+    fn parse_list() {
+        let source = "str slice";
+        let value = "[9, 4, 5, 6]";
+
+        let a = Values::parse_value(value, source);
+        println!("{a:?}")
     }
 }

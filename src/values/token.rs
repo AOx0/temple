@@ -74,15 +74,18 @@ impl Tokens<'_> {
     }
 
     pub fn current_location(&self) -> Location {
-        self.location(self.cursor)
+        self.location(self.cursor.checked_sub(1).unwrap_or_default())
     }
 
     pub fn location(&self, cursor: usize) -> Location {
         let span = if let Some(loc) = self.span.get(cursor).cloned() {
             loc
-        } else {
+        } else if !self.span.is_empty() {
             self.span[cursor - 1].clone()
+        } else {
+            0..self.inp.len()
         };
+
         let mut line = 1;
         let mut col = 1;
         for i in 0..span.start {
@@ -141,7 +144,7 @@ impl Tokens<'_> {
         self.steps(1);
     }
 
-    pub fn skiping(&mut self, steps: usize) -> &mut Self {
+    pub fn skipping(&mut self, steps: usize) -> &mut Self {
         self.steps(steps);
         self
     }

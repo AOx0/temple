@@ -1,5 +1,6 @@
 use anyhow::{anyhow, bail, ensure, Context, Result};
 use clap::Parser;
+use inquire::validator::Validation;
 use std::{
     borrow::Cow,
     env::{current_dir, current_exe},
@@ -16,7 +17,7 @@ use temple::{
     error, info,
     replacer::ContentsLexer,
     trace,
-    values::Values,
+    values::{Type, Values},
     warn,
 };
 use walkdir::WalkDir;
@@ -356,6 +357,36 @@ If this is your first temple execution you can create a new global config with t
                 .stash(cli_config);
 
             // TODO: Implement null value checking within objects and primitives
+            for (name, value) in config.value_map.iter_mut() {
+                if value.is_null() {
+                    let dtype = config.type_map.get_mut(name).expect("We know it exists");
+                    match dtype {
+                        Type::Array(_) 
+                        | Type::Object(_) 
+                        | Type::Any 
+                        | Type::Number => {
+                            let input = ask_any(name, &format!("{dtype}"), dtype.clone());
+                            let input_value = Values::parse_value(&input, "")
+                                .expect("Infallible, checked inside the function");
+
+                            let val_type = Type::from_value(&input_value, dtype);
+                            if val_type.is_equivalent(dtype) {
+                                *value = input_value;
+                                *dtype = val_type;
+                            } else {
+                                bail!("Error, value not valid for key {name:?} with type {dtype}\n");
+                            }
+                        },
+                        Type::String => {
+                            *value = tera::Value::String(ask_string(name))
+                        },
+                        Type::Bool => *value = tera::Value::Bool(ask_bool(name)),
+                        Type::Unknown => bail!(
+                            "Keys with unknown data type and no value assigned are not supported: {name:?}\n"
+                        ),
+                    }
+                }
+            }
             trace!("Final config: {:?}", config.value_map);
             trace!("Working with template {:?}", template);
 
@@ -433,7 +464,7 @@ If this is your first temple execution you can create a new global config with t
                             .read(true)
                             .open(entry.path())
                             .map_err(|err| {
-                                anyhow!("Error with orign path {}: {err}", entry.path().display())
+                                anyhow!("Error with origin path {}: {err}", entry.path().display())
                             })?;
 
                     let target = render_path(&target, &config)?;
@@ -456,7 +487,7 @@ If this is your first temple execution you can create a new global config with t
                     buff.clear();
                     origin.read_to_string(&mut buff).map_err(|err| {
                         anyhow!(
-                            "Error while reading orign path {}: {err}",
+                            "Error while reading origin path {}: {err}",
                             entry.path().display()
                         )
                     })?;
@@ -484,6 +515,7 @@ If this is your first temple execution you can create a new global config with t
                 };
             }
 
+            info!("Rendered {:?} at {:?}", name, current_dir.display());
             Ok(())
         }
     }
@@ -609,7 +641,9 @@ impl<'a> Replaced<'a> {
                             if curr.is_object() {
                                 errors.push(ErrorReplace::UnexpectedObject(access, ""));
                                 break 'a;
-                            } else if let tera::Value::String(curr) = curr {
+                            }
+
+                            if let tera::Value::String(curr) = curr {
                                 contents.push(Cow::Owned(curr.to_owned()));
                             } else if curr.is_null().not() {
                                 contents.push(Cow::Owned(curr.to_string()));
@@ -651,6 +685,39 @@ fn confirm_creation(path: &std::path::Path) -> bool {
         .prompt();
 
     ans.unwrap()
+}
+
+fn ask_string(key: &str) -> String {
+    inquire::prompt_text(format!("Enter a String value for field {key:?}:")).unwrap()
+}
+
+fn ask_any(key: &str, kind: &str, expected_type: Type) -> String {
+    inquire::Text::new(&format!("Enter {kind} value for field {key:?}:"))
+        .with_validator(move |a: &str| {
+            Ok(if a.is_empty().not() {
+                match Values::parse_value(a, "stdin") { 
+                    Ok(value) => {
+                        let val_type = Type::from_value(&value, &expected_type);
+                        if val_type.is_equivalent(&expected_type) {
+                            inquire::validator::Validation::Valid
+                        } else {
+                            Validation::Invalid(format!("Mismatching types. Expected {expected_type} but found {val_type}").into())
+                        }
+                    },
+                    Err(e) => Validation::Invalid(e.to_string().into()),
+                }
+            } else {
+                Validation::Invalid(
+                    "Empty values not allowed".to_owned().into(),
+                )
+            })
+        })
+        .prompt()
+        .unwrap()
+}
+
+fn ask_bool(key: &str) -> bool {
+    inquire::prompt_confirmation(format!("Set bool value of {key:?} to `true`?")).unwrap()
 }
 
 fn main() -> ExitCode {

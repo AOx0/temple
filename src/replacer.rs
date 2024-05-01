@@ -104,7 +104,7 @@ impl<'i> ContentsLexer<'i> {
                 indicators.delimiters().0.to_owned(),
                 indicators.delimiters().1.to_owned(),
             ))
-            .map_err(|e| crate::info!("Already set: {e:?}"));
+            .map_err(|e| crate::trace!("Already set: {e:?}"));
 
         Ok(ContentsLexer {
             next: None,
