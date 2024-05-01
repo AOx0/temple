@@ -181,7 +181,7 @@ If this is your first temple execution you can create a new global config with t
 
             // To avoid the user doing unwanted operations we prompt for confirmation with
             // the path visible to the user
-            if !is_global && !confirm_creation(&path) {
+            if !is_global && !confirm_creation(&path)? {
                 return Ok(());
             }
 
@@ -227,7 +227,7 @@ If this is your first temple execution you can create a new global config with t
                 name
             );
 
-            if !confirm_remove(&path) {
+            if !confirm_remove(&path)? {
                 return Ok(());
             }
 
@@ -241,7 +241,7 @@ If this is your first temple execution you can create a new global config with t
             temple::args::DeinitOpt::Global => {
                 let path = temple_dirs.global_config();
 
-                if confirm_remove(path) {
+                if confirm_remove(path)? {
                     info!(
                         "Removing temple configuration directory: {}",
                         path.display()
@@ -253,7 +253,7 @@ If this is your first temple execution you can create a new global config with t
             }
             temple::args::DeinitOpt::Local => {
                 if let Some(path) = temple_dirs.local_config() {
-                    if confirm_remove(path) {
+                    if confirm_remove(path)? {
                         info!(
                             "Removing temple configuration directory: {}",
                             path.display()
@@ -377,9 +377,9 @@ If this is your first temple execution you can create a new global config with t
                             }
                         },
                         Type::String => {
-                            *value = tera::Value::String(ask_string(name))
+                            *value = tera::Value::String(ask_string(name)?)
                         },
-                        Type::Bool => *value = tera::Value::Bool(ask_bool(name)),
+                        Type::Bool => *value = tera::Value::Bool(ask_bool(name)?),
                         Type::Unknown => bail!(
                             "Keys with unknown data type and no value assigned are not supported: {name:?}\n"
                         ),
@@ -618,7 +618,7 @@ impl<'a> Replaced<'a> {
                 }
                 [Type::IdentWithField(access), ..] => {
                     let (ident, fields) = access.split_once('.').expect(
-                        "The REGEX does guarantee there is at least a identifier and one field",
+                        "The REGEX does guarantee there is at least an identifier and one field",
                     );
 
                     'a: {
@@ -670,24 +670,23 @@ impl<'a> Replaced<'a> {
     }
 }
 
-fn confirm_remove(path: &std::path::Path) -> bool {
-    let ans = inquire::Confirm::new(&format!("Do you want to remove {}?", path.display()))
+fn confirm_remove(path: &std::path::Path) -> Result<bool> {
+    inquire::Confirm::new(&format!("Do you want to remove {}?", path.display()))
         .with_default(false)
-        .prompt();
-
-    ans.unwrap()
+        .prompt()
+        .map_err(|err| anyhow!(err))
 }
 
-fn confirm_creation(path: &std::path::Path) -> bool {
-    let ans = inquire::Confirm::new(&format!("Do you want to create {}?", path.display()))
+fn confirm_creation(path: &std::path::Path) -> Result<bool> {
+    inquire::Confirm::new(&format!("Do you want to create {}?", path.display()))
         .with_default(false)
-        .prompt();
-
-    ans.unwrap()
+        .prompt()
+        .map_err(|err| anyhow!(err))
 }
 
-fn ask_string(key: &str) -> String {
-    inquire::prompt_text(format!("Enter a String value for field {key:?}:")).unwrap()
+fn ask_string(key: &str) -> Result<String> {
+    inquire::prompt_text(format!("Enter a String value for field {key:?}:"))
+        .map_err(|err| anyhow!(err))
 }
 
 fn ask_any(key: &str, kind: &str, expected_type: Type) -> Result<String> {
@@ -715,8 +714,9 @@ fn ask_any(key: &str, kind: &str, expected_type: Type) -> Result<String> {
         .map_err(|err| anyhow!(err))
 }
 
-fn ask_bool(key: &str) -> bool {
-    inquire::prompt_confirmation(format!("Set bool value of {key:?} to `true`?")).unwrap()
+fn ask_bool(key: &str) -> Result<bool> {
+    inquire::prompt_confirmation(format!("Set bool value of {key:?} to `true`?"))
+        .map_err(|err| anyhow!(err))
 }
 
 fn main() -> ExitCode {

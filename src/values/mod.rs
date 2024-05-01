@@ -155,17 +155,26 @@ impl Values {
     #[must_use]
     pub fn stash(mut self, other: Self) -> Self {
         for (k, v) in other.value_map.0 {
+            let key = if self.value_map.contains_key(&k) {
+                k.to_string()
+            } else {
+                String::new()
+            };
+
             self.value_map
                 .insert(k, v)
                 .iter()
-                .for_each(|v| warn!("Overriding previous value {:?}", v));
+                .for_each(|v| crate::trace!("Overriding previous value {:?} for key {:?}", v, key));
         }
 
         for (k, v) in other.type_map.0 {
             if let Entry::Vacant(e) = self.type_map.entry(k.clone()) {
                 e.insert(v);
             } else {
-                warn!("Using previously defined data type for value {}", k);
+                crate::trace!(
+                    "Using previously defined data type for value of key {:?}",
+                    k
+                );
             }
         }
 
